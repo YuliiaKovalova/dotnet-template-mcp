@@ -1,0 +1,26 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Template Engine packages -->
+    <PackageVersion Include="Microsoft.TemplateEngine.IDE" Version="10.0.103" />
+    <PackageVersion Include="Microsoft.TemplateEngine.Abstractions" Version="10.0.103" />
+    <PackageVersion Include="Microsoft.TemplateEngine.Edge" Version="10.0.103" />
+    <PackageVersion Include="Microsoft.TemplateEngine.Orchestrator.RunnableProjects" Version="10.0.103" />
+    <PackageVersion Include="Microsoft.TemplateSearch.Common" Version="10.0.103" />
+
+    <!-- MCP SDK -->
+    <PackageVersion Include="ModelContextProtocol" Version="0.2.0-preview.1" />
+
+    <!-- Hosting -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+
+    <!-- Test dependencies -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.0.1" />
+    <PackageVersion Include="FakeItEasy" Version="8.1.0" />
+  </ItemGroup>
+</Project>
