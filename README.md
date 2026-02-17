@@ -8,6 +8,7 @@ This server exposes the .NET Template Engine's capabilities as MCP tools, solvin
 
 - **Single-call parameter discovery** — `template_inspect` returns all parameters, constraints, and post-actions in one call (vs. multiple `dotnet new` CLI commands)
 - **Dry-run preview** — `template_dry_run` shows what files would be created without writing to disk
+- **SDK template auto-discovery** — automatically detects and installs SDK-bundled templates (`webapi`, `console`, `blazor`, etc.) on first access
 - **AI-friendly metadata** — Uses `HostIdentifier = "ai"` to auto-discover `ai.host.json` files for enhanced template descriptions
 - **Standalone** — consumes template engine via NuGet packages, no engine modifications needed
 
@@ -158,7 +159,7 @@ The server communicates over stdin/stdout using the MCP JSON-RPC protocol.
 |---------|-------|-----|
 | `ENOENT` or "command not found" | `~/.dotnet/tools` not on PATH | Use full path to the `.exe`, or add `~/.dotnet/tools` to your system PATH |
 | `spawn template-engine-mcp ENOENT` in VS Code | Same as above | Use full path or `dotnet tool run` approach |
-| `template_search` returns empty | MCP server uses its own template cache (`HostIdentifier = "ai"`), separate from `dotnet new` | Use `template_install` to install template packages into the MCP host |
+| `template_search` returns empty | MCP server uses its own template cache (`HostIdentifier = "ai"`), separate from `dotnet new` | SDK templates auto-install on first access; use `template_install` for additional packages |
 
 ## Tool Reference
 
@@ -320,6 +321,15 @@ Before creation, the server checks template constraints and returns warnings:
 - **OS constraints** — e.g., "This template requires Windows but you are on Linux"
 - **SDK version constraints** — e.g., "Requires .NET 9.0 SDK"
 - **Workload constraints** — e.g., "Requires the MAUI workload"
+
+### SDK Template Auto-Discovery
+On first template operation, the server automatically scans the .NET SDK directory for bundled template packages (e.g., `console`, `webapi`, `classlib`, `blazor`, `worker`, etc.) and installs them into the MCP host's template cache. This means SDK templates are available immediately — no manual `template_install` required.
+
+The discovery process:
+1. Locates the SDK root (`DOTNET_ROOT` or default install path)
+2. Scans `{dotnet_root}/templates/{latest_version}/*.nupkg`
+3. Deduplicates packages by base name (keeps highest version)
+4. Installs only packages not already present
 
 ### Unified Search
 `template_search` returns results from both local installed templates AND NuGet.org in a single ranked list. Local templates appear first (ready to use), NuGet results include package ID and version for installation.
