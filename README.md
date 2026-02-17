@@ -44,6 +44,17 @@ dotnet tool install --global --add-source ./nupkg Microsoft.TemplateEngine.MCP
 
 ## Configuration
 
+> **Important:** After installing as a global tool, the executable is placed in `~/.dotnet/tools/` (i.e., `%USERPROFILE%\.dotnet\tools\` on Windows, `~/.dotnet/tools/` on macOS/Linux). If this directory is not on your system `PATH`, MCP clients may fail with `ENOENT`. In that case, use the **full path** to the executable as shown below, or add the directory to your `PATH`.
+
+To find the full path to the tool:
+```bash
+# PowerShell
+(Get-Command template-engine-mcp).Source
+
+# bash/zsh
+which template-engine-mcp
+```
+
 ### Claude Desktop
 
 Add to your Claude Desktop configuration (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
@@ -58,15 +69,54 @@ Add to your Claude Desktop configuration (`%APPDATA%\Claude\claude_desktop_confi
 }
 ```
 
+If you get an `ENOENT` error, use the full path instead:
+
+```json
+{
+  "mcpServers": {
+    "dotnet-templates": {
+      "command": "C:\\Users\\<username>\\.dotnet\\tools\\template-engine-mcp.exe"
+    }
+  }
+}
+```
+
 ### VS Code / GitHub Copilot
 
-Add to `.vscode/mcp.json` in your workspace:
+Add to `.vscode/mcp.json` in your workspace or to your user settings:
 
 ```json
 {
   "servers": {
     "dotnet-templates": {
       "command": "template-engine-mcp",
+      "type": "stdio"
+    }
+  }
+}
+```
+
+If the command is not found, use the full path:
+
+```json
+{
+  "servers": {
+    "dotnet-templates": {
+      "command": "C:\\Users\\<username>\\.dotnet\\tools\\template-engine-mcp.exe",
+      "type": "stdio"
+    }
+  }
+}
+```
+
+Alternatively, use `dotnet` as the command:
+
+```json
+{
+  "servers": {
+    "dotnet-templates": {
+      "command": "dotnet",
+      "args": ["tool", "run", "template-engine-mcp"],
       "type": "stdio"
     }
   }
@@ -87,6 +137,8 @@ Add to Cursor settings → MCP Servers:
 }
 ```
 
+If the command is not found, use the full path or `dotnet tool run` approach as shown above.
+
 ### Any MCP client (stdio)
 
 ```bash
@@ -94,6 +146,14 @@ template-engine-mcp
 ```
 
 The server communicates over stdin/stdout using the MCP JSON-RPC protocol.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `ENOENT` or "command not found" | `~/.dotnet/tools` not on PATH | Use full path to the `.exe`, or add `~/.dotnet/tools` to your system PATH |
+| `spawn template-engine-mcp ENOENT` in VS Code | Same as above | Use full path or `dotnet tool run` approach |
+| `template_search` returns empty | MCP server uses its own template cache (`HostIdentifier = "ai"`), separate from `dotnet new` | Use `template_install` to install template packages into the MCP host |
 
 ## Tool Reference
 
