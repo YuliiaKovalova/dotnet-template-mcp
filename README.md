@@ -59,17 +59,7 @@ which template-engine-mcp
 
 Add to your Claude Desktop configuration (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
-```json
-{
-  "mcpServers": {
-    "dotnet-templates": {
-      "command": "template-engine-mcp"
-    }
-  }
-}
-```
-
-If you get an `ENOENT` error, use the full path instead:
+**Recommended** — use the full path:
 
 ```json
 {
@@ -81,47 +71,62 @@ If you get an `ENOENT` error, use the full path instead:
 }
 ```
 
+If `~/.dotnet/tools` is on your `PATH`, you can use the short form:
+
+```json
+{
+  "mcpServers": {
+    "dotnet-templates": {
+      "command": "template-engine-mcp"
+    }
+  }
+}
+```
+
 ### VS Code / GitHub Copilot
 
-Add to `.vscode/mcp.json` in your workspace or to your user settings:
+Add to your user-level MCP config (`%APPDATA%\Code\User\mcp.json` on Windows) or `.vscode/mcp.json` in your workspace.
+
+**Recommended** — use the full path to the executable (most reliable):
 
 ```json
 {
   "servers": {
     "dotnet-templates": {
-      "command": "template-engine-mcp",
-      "type": "stdio"
+      "type": "stdio",
+      "command": "C:\\Users\\<username>\\.dotnet\\tools\\template-engine-mcp.exe"
     }
   }
 }
 ```
 
-If the command is not found, use the full path:
+On macOS/Linux:
 
 ```json
 {
   "servers": {
     "dotnet-templates": {
-      "command": "C:\\Users\\<username>\\.dotnet\\tools\\template-engine-mcp.exe",
-      "type": "stdio"
+      "type": "stdio",
+      "command": "/Users/<username>/.dotnet/tools/template-engine-mcp"
     }
   }
 }
 ```
 
-Alternatively, use `dotnet` as the command:
+If `~/.dotnet/tools` is on your `PATH`, you can use the short form:
 
 ```json
 {
   "servers": {
     "dotnet-templates": {
-      "command": "dotnet",
-      "args": ["tool", "run", "template-engine-mcp"],
-      "type": "stdio"
+      "type": "stdio",
+      "command": "template-engine-mcp"
     }
   }
 }
 ```
+
+> **Note:** The `"type": "stdio"` field is required. After updating the config, reload VS Code (`Ctrl+Shift+P` → "Developer: Reload Window") and check the **Output** panel → **MCP: dotnet-templates** for `Connection state: Running`.
 
 ### Cursor
 
