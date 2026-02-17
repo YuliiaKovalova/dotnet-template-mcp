@@ -25,7 +25,8 @@ internal sealed class Program
                 };
             })
             .WithStdioServerTransport()
-            .WithToolsFromAssembly();
+            .WithToolsFromAssembly()
+            .WithPromptsFromAssembly();
 
         await builder.Build().RunAsync().ConfigureAwait(false);
     }

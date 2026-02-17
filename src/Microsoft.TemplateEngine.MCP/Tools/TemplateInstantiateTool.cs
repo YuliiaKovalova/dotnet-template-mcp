@@ -12,7 +12,7 @@ namespace Microsoft.TemplateEngine.MCP.Tools;
 internal sealed class TemplateInstantiateTool
 {
     [McpServerTool(Name = "template_instantiate")]
-    [Description("Create a project or item from a template with provided parameter values. Writes files to disk at the specified output path. Use template_dry_run first to preview what will be created.")]
+    [Description("Create a project or item from a template. If the template is not installed, it will automatically search NuGet, install, and create in one call. Validates parameters and checks constraints before writing to disk.")]
     public static async Task<string> InstantiateTemplateAsync(
         TemplateEngineService engineService,
         [Description("Template identity or short name")] string templateName,
@@ -21,23 +21,47 @@ internal sealed class TemplateInstantiateTool
         [Description("JSON object of parameter name-value pairs (e.g., {\"Framework\": \"net8.0\", \"EnableAot\": \"true\"})")] string? parametersJson = null,
         CancellationToken cancellationToken = default)
     {
-        var templates = await engineService.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
+        string? autoInstallMessage = null;
 
-        var template = templates.FirstOrDefault(t =>
-            t.Identity.Equals(templateName, StringComparison.OrdinalIgnoreCase) ||
-            t.ShortNameList.Any(sn => sn.Equals(templateName, StringComparison.OrdinalIgnoreCase)));
+        // 1. Find template locally
+        var template = await engineService.FindTemplateAsync(templateName, cancellationToken).ConfigureAwait(false);
 
+        // 2. Auto-resolve: if not found, search NuGet → install → find
         if (template == null)
         {
-            return JsonSerializer.Serialize(new { error = $"Template '{templateName}' not found." });
+            var (resolved, message) = await engineService.AutoResolveAndInstallAsync(templateName, cancellationToken).ConfigureAwait(false);
+            if (resolved == null)
+            {
+                return JsonSerializer.Serialize(new { error = message }, new JsonSerializerOptions { WriteIndented = true });
+            }
+
+            template = resolved;
+            autoInstallMessage = message;
         }
 
         var parameters = ParseParameters(parametersJson);
+
+        // 3. Validate parameters before creation
+        var validationErrors = TemplateEngineService.ValidateParameters(template, parameters);
+        if (validationErrors.Count > 0)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = "Parameter validation failed. No files were written.",
+                validationErrors,
+                templateName = template.Identity,
+            }, new JsonSerializerOptions { WriteIndented = true });
+        }
+
+        // 4. Check constraints
+        var constraintWarnings = TemplateEngineService.CheckConstraints(template);
+
+        // 5. Instantiate
         string resolvedOutputPath = outputPath ?? Path.Combine(Environment.CurrentDirectory, name ?? template.DefaultName ?? "NewProject");
 
         var result = await engineService.CreateAsync(template, name, resolvedOutputPath, parameters, cancellationToken).ConfigureAwait(false);
 
-        return SerializeCreationResult(result);
+        return SerializeCreationResult(result, autoInstallMessage, constraintWarnings);
     }
 
     internal static Dictionary<string, string?> ParseParameters(string? parametersJson)
@@ -65,7 +89,10 @@ internal sealed class TemplateInstantiateTool
         }
     }
 
-    internal static string SerializeCreationResult(ITemplateCreationResult result)
+    internal static string SerializeCreationResult(
+        ITemplateCreationResult result,
+        string? autoInstallMessage = null,
+        IReadOnlyList<string>? constraintWarnings = null)
     {
         var postActions = result.CreationResult?.PostActions?.Select(pa => new
         {
@@ -90,6 +117,8 @@ internal sealed class TemplateInstantiateTool
             result.ErrorMessage,
             result.OutputBaseDirectory,
             result.TemplateFullName,
+            AutoInstalled = autoInstallMessage,
+            ConstraintWarnings = constraintWarnings?.Count > 0 ? constraintWarnings : null,
             PrimaryOutputs = primaryOutputs,
             PostActions = postActions,
             FileChanges = fileChanges,

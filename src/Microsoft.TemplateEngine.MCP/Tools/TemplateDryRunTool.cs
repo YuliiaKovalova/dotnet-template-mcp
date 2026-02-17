@@ -11,7 +11,7 @@ namespace Microsoft.TemplateEngine.MCP.Tools;
 internal sealed class TemplateDryRunTool
 {
     [McpServerTool(Name = "template_dry_run")]
-    [Description("Preview what files and actions would be created by a template without writing anything to disk. Use this before template_instantiate to review changes.")]
+    [Description("Preview what files and actions would be created by a template without writing anything to disk. Supports auto-resolve from NuGet, parameter validation, and constraint checking.")]
     public static async Task<string> DryRunTemplateAsync(
         TemplateEngineService engineService,
         [Description("Template identity or short name")] string templateName,
@@ -20,22 +20,45 @@ internal sealed class TemplateDryRunTool
         [Description("JSON object of parameter name-value pairs (e.g., {\"Framework\": \"net8.0\"})")] string? parametersJson = null,
         CancellationToken cancellationToken = default)
     {
-        var templates = await engineService.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
+        string? autoInstallMessage = null;
 
-        var template = templates.FirstOrDefault(t =>
-            t.Identity.Equals(templateName, StringComparison.OrdinalIgnoreCase) ||
-            t.ShortNameList.Any(sn => sn.Equals(templateName, StringComparison.OrdinalIgnoreCase)));
+        // 1. Find template locally
+        var template = await engineService.FindTemplateAsync(templateName, cancellationToken).ConfigureAwait(false);
 
+        // 2. Auto-resolve from NuGet if not found
         if (template == null)
         {
-            return JsonSerializer.Serialize(new { error = $"Template '{templateName}' not found." });
+            var (resolved, message) = await engineService.AutoResolveAndInstallAsync(templateName, cancellationToken).ConfigureAwait(false);
+            if (resolved == null)
+            {
+                return JsonSerializer.Serialize(new { error = message }, new JsonSerializerOptions { WriteIndented = true });
+            }
+
+            template = resolved;
+            autoInstallMessage = message;
         }
 
         var parameters = TemplateInstantiateTool.ParseParameters(parametersJson);
+
+        // 3. Validate parameters
+        var validationErrors = TemplateEngineService.ValidateParameters(template, parameters);
+        if (validationErrors.Count > 0)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = "Parameter validation failed.",
+                validationErrors,
+                templateName = template.Identity,
+            }, new JsonSerializerOptions { WriteIndented = true });
+        }
+
+        // 4. Check constraints
+        var constraintWarnings = TemplateEngineService.CheckConstraints(template);
+
         string resolvedOutputPath = outputPath ?? Path.Combine(Path.GetTempPath(), name ?? template.DefaultName ?? "DryRunPreview");
 
         var result = await engineService.GetCreationEffectsAsync(template, name, resolvedOutputPath, parameters, cancellationToken).ConfigureAwait(false);
 
-        return TemplateInstantiateTool.SerializeCreationResult(result);
+        return TemplateInstantiateTool.SerializeCreationResult(result, autoInstallMessage, constraintWarnings);
     }
 }

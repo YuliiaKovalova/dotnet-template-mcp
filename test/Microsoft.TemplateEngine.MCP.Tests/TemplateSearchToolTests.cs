@@ -6,6 +6,7 @@ using FakeItEasy;
 using Microsoft.Extensions.Logging;
 using Microsoft.TemplateEngine.Abstractions;
 using Microsoft.TemplateEngine.MCP.Tools;
+using Microsoft.TemplateSearch.Common.Abstractions;
 using Xunit;
 
 namespace Microsoft.TemplateEngine.MCP.Tests;
@@ -25,6 +26,7 @@ public class TemplateSearchToolTests
         var items = JsonSerializer.Deserialize<JsonElement>(result);
         Assert.Equal(1, items.GetArrayLength());
         Assert.Equal("Microsoft.Console", items[0].GetProperty("Identity").GetString());
+        Assert.Equal("local", items[0].GetProperty("Source").GetString());
     }
 
     [Fact]
@@ -102,6 +104,9 @@ public class TemplateSearchToolTests
         var service = A.Fake<TemplateEngineService>();
         A.CallTo(() => service.GetTemplatesAsync(A<CancellationToken>._))
             .Returns(Task.FromResult<IReadOnlyList<ITemplateInfo>>(templates));
+        A.CallTo(() => service.SearchNuGetTemplatesAsync(A<string>._, A<string?>._, A<string?>._, A<CancellationToken>._))
+            .Returns(Task.FromResult<IReadOnlyList<(ITemplatePackageInfo, IReadOnlyList<ITemplateInfo>)>>(
+                Array.Empty<(ITemplatePackageInfo, IReadOnlyList<ITemplateInfo>)>()));
         return service;
     }
 }
