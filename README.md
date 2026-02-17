@@ -15,12 +15,12 @@ This server exposes the .NET Template Engine's capabilities as MCP tools, solvin
 
 | Tool | Description |
 |------|-------------|
-| `template_search` | Search templates by name, tags, language, or type |
+| `template_search` | Search templates locally **and** on NuGet.org in a unified ranked list |
 | `template_list` | List installed templates with filtering |
 | `template_inspect` | Full metadata inspection (parameters, constraints, post-actions) in a single call |
-| `template_instantiate` | Create a project/item from a template |
-| `template_dry_run` | Preview creation effects without writing to disk |
-| `template_install` | Install a template package from NuGet or local path |
+| `template_instantiate` | Create a project/item — **auto-resolves** from NuGet if not installed, validates parameters, checks constraints |
+| `template_dry_run` | Preview creation effects without writing to disk — same smart behaviors as instantiate |
+| `template_install` | Install a template package and **return full metadata** for all installed templates |
 | `template_uninstall` | Remove an installed template package |
 | `templates_installed` | Structured listing of all installed templates |
 
@@ -277,24 +277,97 @@ Get a structured listing of all installed templates with metadata counts.
 
 ## Typical AI Agent Workflow
 
+### Simple (template already installed)
 ```
-1. template_search("web API")          → find matching templates
+template_instantiate("console", name: "MyApp")  → project created (1 call)
+```
+
+### With discovery
+```
+1. template_search("web API")          → find matching templates (local + NuGet)
 2. template_inspect("webapi")          → discover all parameters in one call
 3. template_dry_run("webapi", ...)     → preview files without writing
 4. template_instantiate("webapi", ...) → create the project
 ```
 
+### Auto-resolve (template NOT installed)
+```
+template_instantiate("maui-blazor", name: "MyApp")
+  → auto-searches NuGet → installs package → creates project (1 call)
+```
+
 This replaces 4+ `dotnet new` CLI commands with structured, AI-friendly tool calls.
+
+## Smart Behaviors
+
+### Auto-Resolve
+If you call `template_instantiate` or `template_dry_run` with a template that's not installed, the server automatically:
+1. Searches NuGet.org for the template
+2. Installs the matching package
+3. Proceeds with instantiation or dry-run
+
+If the match is ambiguous, it returns a list of candidates with a "did you mean...?" suggestion.
+
+### Parameter Validation
+Before writing any files, the server validates parameters against the template's definition:
+- **Choice parameters** — checks the value is in the allowed set (e.g., `Framework: "net3.0"` → error with valid choices)
+- **Boolean parameters** — checks the value is `true` or `false`
+- **Integer parameters** — checks the value is a valid number
+- **Unknown parameters** — reports which parameters are available
+
+### Constraint Checking
+Before creation, the server checks template constraints and returns warnings:
+- **OS constraints** — e.g., "This template requires Windows but you are on Linux"
+- **SDK version constraints** — e.g., "Requires .NET 9.0 SDK"
+- **Workload constraints** — e.g., "Requires the MAUI workload"
+
+### Unified Search
+`template_search` returns results from both local installed templates AND NuGet.org in a single ranked list. Local templates appear first (ready to use), NuGet results include package ID and version for installation.
+
+### Smart Install
+`template_install` returns install status **and** full metadata for all templates in the package, so the AI can immediately proceed to instantiation without a second call.
 
 ## Architecture
 
 The MCP server is a **host** for the template engine — the same way Visual Studio and the `dotnet` CLI are hosts. It uses `HostIdentifier = "ai"`, which means the engine automatically discovers `ai.host.json` metadata files that template authors can ship alongside their templates for AI-enhanced descriptions and parameter hints.
 
+### Template Cache & Package Sharing
+
+The template engine stores installed packages in a **global** `packages.json` file (`~/.templateengine/packages.json`) that is **shared across all hosts**. This means:
+
+- Templates installed via `dotnet new install` are **automatically visible** to the MCP server
+- Templates installed via the MCP server's `template_install` are visible to `dotnet new`
+- SDK workload templates (MAUI, Android, etc.) are shared across all hosts
+
+What's **per-host** is only:
+- `templatecache.json` — cached template metadata (auto-rebuilt on first access)
+- `nugetTemplateSearchInfo.json` — the NuGet search cache
+- `*.host.json` resolution — which host config to load (`ai.host.json` vs `dotnetcli.host.json`)
+
+The MCP server uses `fallbackHostTemplateConfigNames: ["dotnetcli.host.json"]` so templates without an `ai.host.json` still load the CLI's metadata.
+
+**Template authors** can optionally ship `.template.config/ai.host.json` alongside their `template.json` to provide AI-enhanced descriptions, parameter hints, and skill mappings that are automatically discovered when the MCP server loads the template.
+
 **NuGet dependencies (no source modifications needed):**
 - `Microsoft.TemplateEngine.IDE` — `Bootstrapper` API for template operations
 - `Microsoft.TemplateEngine.Abstractions` — `ITemplateInfo`, `IPostAction`, etc.
 - `Microsoft.TemplateEngine.Edge` — `DefaultTemplateEngineHost`, `TemplateCreator`
+- `Microsoft.TemplateSearch.Common` — `TemplateSearchCoordinator` for NuGet search
 - `ModelContextProtocol` — C# MCP SDK for tool registration and stdio transport
+
+## MCP Prompt
+
+### `create_project`
+
+A guided prompt that walks the AI through the full project creation workflow:
+
+1. Search for templates matching your description
+2. Inspect the best match for parameters and constraints
+3. Suggest parameter values
+4. Preview with dry-run
+5. Create the project after confirmation
+
+**Usage in AI chat:** *"I want to create a new web API with authentication"*
 
 ## Building & Testing
 
@@ -310,14 +383,16 @@ dotnet-template-mcp/
 ├── src/Microsoft.TemplateEngine.MCP/
 │   ├── Host/
 │   │   ├── McpTemplateEngineHost.cs      # ITemplateEngineHost with HostIdentifier="ai"
-│   │   └── TemplateEngineService.cs      # Bootstrapper wrapper for DI
+│   │   └── TemplateEngineService.cs      # Bootstrapper wrapper + NuGet search + validation
+│   ├── Prompts/
+│   │   └── CreateProjectPrompt.cs        # create_project guided workflow
 │   ├── Tools/
-│   │   ├── TemplateSearchTool.cs         # template_search
+│   │   ├── TemplateSearchTool.cs         # template_search (local + NuGet)
 │   │   ├── TemplateListTool.cs           # template_list
 │   │   ├── TemplateInspectTool.cs        # template_inspect
-│   │   ├── TemplateInstantiateTool.cs    # template_instantiate
-│   │   ├── TemplateDryRunTool.cs         # template_dry_run
-│   │   ├── TemplateInstallTool.cs        # template_install
+│   │   ├── TemplateInstantiateTool.cs    # template_instantiate (auto-resolve + validation)
+│   │   ├── TemplateDryRunTool.cs         # template_dry_run (auto-resolve + validation)
+│   │   ├── TemplateInstallTool.cs        # template_install (with metadata return)
 │   │   ├── TemplateUninstallTool.cs      # template_uninstall
 │   │   └── TemplateInstalledResourceTool.cs  # templates_installed
 │   ├── Program.cs                        # MCP server entry point
@@ -326,7 +401,8 @@ dotnet-template-mcp/
 │   ├── TemplateSearchToolTests.cs
 │   ├── TemplateListToolTests.cs
 │   ├── TemplateInspectToolTests.cs
-│   └── ParameterParsingTests.cs
+│   ├── ParameterParsingTests.cs
+│   └── ParameterValidationTests.cs
 └── Microsoft.TemplateEngine.MCP.sln
 ```
 
