@@ -14,6 +14,8 @@ internal sealed class Program
         var builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder(args);
         builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
 
+        var featureFlags = McpFeatureFlags.FromEnvironment();
+        builder.Services.AddSingleton(featureFlags);
         builder.Services.AddSingleton<TemplateEngineService>();
         builder.Services
             .AddMcpServer(options =>
