@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.Json;
 using ModelContextProtocol.Server;
 
@@ -20,6 +21,10 @@ internal sealed class TemplateDryRunTool
         [Description("JSON object of parameter name-value pairs (e.g., {\"Framework\": \"net8.0\"})")] string? parametersJson = null,
         CancellationToken cancellationToken = default)
     {
+        using var activity = McpTelemetry.StartToolActivity("template_dry_run");
+        var sw = Stopwatch.StartNew();
+        try
+        {
         string? autoInstallMessage = null;
 
         // 1. Find template locally
@@ -40,7 +45,17 @@ internal sealed class TemplateDryRunTool
 
         var parameters = TemplateInstantiateTool.ParseParameters(parametersJson);
 
-        // 3. Validate parameters
+        // 3. Apply smart defaults
+        var smartDefaults = TemplateEngineService.SuggestSmartDefaults(template, parameters);
+        foreach (var (key, value) in smartDefaults)
+        {
+            if (!parameters.ContainsKey(key))
+            {
+                parameters[key] = value;
+            }
+        }
+
+        // 4. Validate parameters
         var validationErrors = TemplateEngineService.ValidateParameters(template, parameters);
         if (validationErrors.Count > 0)
         {
@@ -52,13 +67,18 @@ internal sealed class TemplateDryRunTool
             }, new JsonSerializerOptions { WriteIndented = true });
         }
 
-        // 4. Check constraints
+        // 5. Check constraints
         var constraintWarnings = TemplateEngineService.CheckConstraints(template);
 
         string resolvedOutputPath = outputPath ?? Path.Combine(Path.GetTempPath(), name ?? template.DefaultName ?? "DryRunPreview");
 
         var result = await engineService.GetCreationEffectsAsync(template, name, resolvedOutputPath, parameters, cancellationToken).ConfigureAwait(false);
 
-        return TemplateInstantiateTool.SerializeCreationResult(result, autoInstallMessage, constraintWarnings);
+        return TemplateInstantiateTool.SerializeCreationResult(result, autoInstallMessage, constraintWarnings, smartDefaults.Count > 0 ? smartDefaults : null);
+        }
+        finally
+        {
+            McpTelemetry.RecordDuration("template_dry_run", sw.Elapsed.TotalMilliseconds);
+        }
     }
 }

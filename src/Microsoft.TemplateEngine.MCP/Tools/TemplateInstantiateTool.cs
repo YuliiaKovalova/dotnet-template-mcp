@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.Json;
 using ModelContextProtocol.Server;
 using ITemplateCreationResult = Microsoft.TemplateEngine.Edge.Template.ITemplateCreationResult;
@@ -21,6 +22,10 @@ internal sealed class TemplateInstantiateTool
         [Description("JSON object of parameter name-value pairs (e.g., {\"Framework\": \"net8.0\", \"EnableAot\": \"true\"})")] string? parametersJson = null,
         CancellationToken cancellationToken = default)
     {
+        using var activity = McpTelemetry.StartToolActivity("template_instantiate");
+        var sw = Stopwatch.StartNew();
+        try
+        {
         string? autoInstallMessage = null;
 
         // 1. Find template locally
@@ -29,9 +34,11 @@ internal sealed class TemplateInstantiateTool
         // 2. Auto-resolve: if not found, search NuGet → install → find
         if (template == null)
         {
+            McpTelemetry.AutoResolves.Add(1);
             var (resolved, message) = await engineService.AutoResolveAndInstallAsync(templateName, cancellationToken).ConfigureAwait(false);
             if (resolved == null)
             {
+                McpTelemetry.RecordError(activity, "template_instantiate", message ?? "auto-resolve failed");
                 return JsonSerializer.Serialize(new { error = message }, new JsonSerializerOptions { WriteIndented = true });
             }
 
@@ -41,10 +48,27 @@ internal sealed class TemplateInstantiateTool
 
         var parameters = ParseParameters(parametersJson);
 
-        // 3. Validate parameters before creation
+        // 3. Apply smart defaults based on cross-parameter relationships
+        var smartDefaults = TemplateEngineService.SuggestSmartDefaults(template, parameters);
+        foreach (var (key, value) in smartDefaults)
+        {
+            if (!parameters.ContainsKey(key))
+            {
+                parameters[key] = value;
+            }
+        }
+
+        if (smartDefaults.Count > 0)
+        {
+            McpTelemetry.SmartDefaultsApplied.Add(smartDefaults.Count);
+        }
+
+        // 4. Validate parameters before creation
         var validationErrors = TemplateEngineService.ValidateParameters(template, parameters);
         if (validationErrors.Count > 0)
         {
+            McpTelemetry.ValidationFailures.Add(1);
+            McpTelemetry.RecordError(activity, "template_instantiate", "Parameter validation failed");
             return JsonSerializer.Serialize(new
             {
                 error = "Parameter validation failed. No files were written.",
@@ -53,15 +77,22 @@ internal sealed class TemplateInstantiateTool
             }, new JsonSerializerOptions { WriteIndented = true });
         }
 
-        // 4. Check constraints
+        // 5. Check constraints
         var constraintWarnings = TemplateEngineService.CheckConstraints(template);
 
-        // 5. Instantiate
+        // 6. Instantiate
         string resolvedOutputPath = outputPath ?? Path.Combine(Environment.CurrentDirectory, name ?? template.DefaultName ?? "NewProject");
 
         var result = await engineService.CreateAsync(template, name, resolvedOutputPath, parameters, cancellationToken).ConfigureAwait(false);
 
-        return SerializeCreationResult(result, autoInstallMessage, constraintWarnings);
+        McpTelemetry.TemplatesCreated.Add(1);
+        activity?.SetTag("mcp.template.identity", template.Identity);
+        return SerializeCreationResult(result, autoInstallMessage, constraintWarnings, smartDefaults.Count > 0 ? smartDefaults : null);
+        }
+        finally
+        {
+            McpTelemetry.RecordDuration("template_instantiate", sw.Elapsed.TotalMilliseconds);
+        }
     }
 
     internal static Dictionary<string, string?> ParseParameters(string? parametersJson)
@@ -92,7 +123,8 @@ internal sealed class TemplateInstantiateTool
     internal static string SerializeCreationResult(
         ITemplateCreationResult result,
         string? autoInstallMessage = null,
-        IReadOnlyList<string>? constraintWarnings = null)
+        IReadOnlyList<string>? constraintWarnings = null,
+        IReadOnlyDictionary<string, string>? appliedSmartDefaults = null)
     {
         var postActions = result.CreationResult?.PostActions?.Select(pa => new
         {
@@ -119,6 +151,7 @@ internal sealed class TemplateInstantiateTool
             result.TemplateFullName,
             AutoInstalled = autoInstallMessage,
             ConstraintWarnings = constraintWarnings?.Count > 0 ? constraintWarnings : null,
+            AppliedSmartDefaults = appliedSmartDefaults?.Count > 0 ? appliedSmartDefaults : null,
             PrimaryOutputs = primaryOutputs,
             PostActions = postActions,
             FileChanges = fileChanges,

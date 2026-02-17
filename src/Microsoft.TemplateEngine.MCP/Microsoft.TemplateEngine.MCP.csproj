@@ -9,7 +9,18 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>template-engine-mcp</ToolCommandName>
     <IsPackable>true</IsPackable>
+    <Version>0.1.0-preview.1</Version>
+    <Authors>YuliiaKovalova</Authors>
+    <PackageProjectUrl>https://github.com/YuliiaKovalova/dotnet-template-mcp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/YuliiaKovalova/dotnet-template-mcp</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>mcp;template-engine;dotnet-new;ai;copilot</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.TemplateEngine.IDE" />

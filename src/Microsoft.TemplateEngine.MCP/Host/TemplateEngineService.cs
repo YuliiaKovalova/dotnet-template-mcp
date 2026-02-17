@@ -437,6 +437,77 @@ internal class TemplateEngineService : IDisposable
     }
 
     /// <summary>
+    /// Apply smart default values based on cross-parameter relationships.
+    /// For example, if EnableAot=true, suggest the latest AOT-compatible framework.
+    /// Returns a dictionary of suggested parameter values (only for params not already specified).
+    /// </summary>
+    public static Dictionary<string, string> SuggestSmartDefaults(ITemplateInfo template, IReadOnlyDictionary<string, string?> userParameters)
+    {
+        var suggestions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Rule: if AOT-related parameters are enabled, prefer latest framework
+        bool aotEnabled = userParameters.Any(p =>
+            (p.Key.Equals("EnableAot", StringComparison.OrdinalIgnoreCase) ||
+             p.Key.Equals("PublishAot", StringComparison.OrdinalIgnoreCase) ||
+             p.Key.Equals("nativeAot", StringComparison.OrdinalIgnoreCase)) &&
+            p.Value?.Equals("true", StringComparison.OrdinalIgnoreCase) == true);
+
+        if (aotEnabled)
+        {
+            var frameworkParam = template.ParameterDefinitions.FirstOrDefault(p =>
+                p.Name.Equals("Framework", StringComparison.OrdinalIgnoreCase));
+            if (frameworkParam?.Choices != null &&
+                !userParameters.ContainsKey("Framework"))
+            {
+                // Pick the highest available framework (AOT works best with latest)
+                var bestFramework = frameworkParam.Choices.Keys
+                    .OrderByDescending(k => k)
+                    .FirstOrDefault();
+                if (bestFramework != null)
+                {
+                    suggestions["Framework"] = bestFramework;
+                }
+            }
+        }
+
+        // Rule: if auth is set to a non-None value, ensure HTTPS is not disabled
+        bool hasAuth = userParameters.Any(p =>
+            p.Key.Equals("auth", StringComparison.OrdinalIgnoreCase) &&
+            p.Value != null &&
+            !p.Value.Equals("None", StringComparison.OrdinalIgnoreCase));
+
+        if (hasAuth && !userParameters.ContainsKey("NoHttps"))
+        {
+            var noHttpsParam = template.ParameterDefinitions.FirstOrDefault(p =>
+                p.Name.Equals("NoHttps", StringComparison.OrdinalIgnoreCase));
+            if (noHttpsParam != null)
+            {
+                suggestions["NoHttps"] = "false";
+            }
+        }
+
+        // Rule: if UseControllers=true, set UseMinimalAPIs=false (mutually exclusive)
+        bool useControllers = userParameters.Any(p =>
+            p.Key.Equals("UseControllers", StringComparison.OrdinalIgnoreCase) &&
+            p.Value?.Equals("true", StringComparison.OrdinalIgnoreCase) == true);
+
+        if (useControllers && !userParameters.ContainsKey("UseMinimalAPIs"))
+        {
+            var minimalParam = template.ParameterDefinitions.FirstOrDefault(p =>
+                p.Name.Equals("UseMinimalAPIs", StringComparison.OrdinalIgnoreCase));
+            if (minimalParam != null)
+            {
+                suggestions["UseMinimalAPIs"] = "false";
+            }
+        }
+
+        // Rule: if UseProgramMain=true, it's an explicit style preference — no additional defaults needed
+        // Rule: if Framework is set but not in choices, warn via validation (handled by ValidateParameters)
+
+        return suggestions;
+    }
+
+    /// <summary>
     /// Check template constraints against the current environment.
     /// Returns a list of warnings (empty if all constraints are met).
     /// </summary>

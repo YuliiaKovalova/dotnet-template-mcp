@@ -9,7 +9,11 @@ This server exposes the .NET Template Engine's capabilities as MCP tools, solvin
 - **Single-call parameter discovery** — `template_inspect` returns all parameters, constraints, and post-actions in one call (vs. multiple `dotnet new` CLI commands)
 - **Dry-run preview** — `template_dry_run` shows what files would be created without writing to disk
 - **SDK template auto-discovery** — automatically detects and installs SDK-bundled templates (`webapi`, `console`, `blazor`, etc.) on first access
+- **Smart defaults** — cross-parameter intelligence (e.g., `EnableAot=true` → suggest latest framework; `UseControllers=true` → set `UseMinimalAPIs=false`)
+- **Idempotent install** — `template_install` skips already-installed packages, reports upgrade opportunities for older versions
+- **NuGet preview** — `template_inspect` can preview metadata for templates not yet installed by querying NuGet.org
 - **AI-friendly metadata** — Uses `HostIdentifier = "ai"` to auto-discover `ai.host.json` files for enhanced template descriptions
+- **Telemetry** — `System.Diagnostics.ActivitySource` and `Meter` for backend-agnostic observability (OpenTelemetry-compatible)
 - **Standalone** — consumes template engine via NuGet packages, no engine modifications needed
 
 ## MCP Tools
@@ -32,6 +36,20 @@ This server exposes the .NET Template Engine's capabilities as MCP tools, solvin
 ```bash
 dotnet tool install --global Microsoft.TemplateEngine.MCP
 ```
+
+### As a local tool (recommended for project-level config)
+
+```bash
+dotnet new tool-manifest   # creates .config/dotnet-tools.json if not present
+dotnet tool install Microsoft.TemplateEngine.MCP
+```
+
+Then run with:
+```bash
+dotnet tool run template-engine-mcp
+```
+
+This avoids PATH issues — the `dotnet` command is always available.
 
 ### From source
 
@@ -88,7 +106,23 @@ If `~/.dotnet/tools` is on your `PATH`, you can use the short form:
 
 Add to your user-level MCP config (`%APPDATA%\Code\User\mcp.json` on Windows) or `.vscode/mcp.json` in your workspace.
 
-**Recommended** — use the full path to the executable (most reliable):
+**Recommended** — use `dotnet tool run` (avoids PATH issues entirely):
+
+```json
+{
+  "servers": {
+    "dotnet-templates": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": ["tool", "run", "template-engine-mcp"]
+    }
+  }
+}
+```
+
+> Requires the tool to be installed as a local tool in the workspace (see [Installation](#installation)).
+
+**Alternative** — use the full path to the executable:
 
 ```json
 {
@@ -137,6 +171,19 @@ Add to Cursor settings → MCP Servers:
 {
   "mcpServers": {
     "dotnet-templates": {
+      "command": "dotnet",
+      "args": ["tool", "run", "template-engine-mcp"]
+    }
+  }
+}
+```
+
+Or using the global tool directly:
+
+```json
+{
+  "mcpServers": {
+    "dotnet-templates": {
       "command": "template-engine-mcp"
     }
   }
@@ -157,8 +204,8 @@ The server communicates over stdin/stdout using the MCP JSON-RPC protocol.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `ENOENT` or "command not found" | `~/.dotnet/tools` not on PATH | Use full path to the `.exe`, or add `~/.dotnet/tools` to your system PATH |
-| `spawn template-engine-mcp ENOENT` in VS Code | Same as above | Use full path or `dotnet tool run` approach |
+| `ENOENT` or "command not found" | `~/.dotnet/tools` not on PATH | Use `dotnet tool run template-engine-mcp` (recommended), use full path to `.exe`, or add `~/.dotnet/tools` to your system PATH |
+| `spawn template-engine-mcp ENOENT` in VS Code | Same as above | Switch to `"command": "dotnet", "args": ["tool", "run", "template-engine-mcp"]` in your MCP config |
 | `template_search` returns empty | MCP server uses its own template cache (`HostIdentifier = "ai"`), separate from `dotnet new` | SDK templates auto-install on first access; use `template_install` for additional packages |
 
 ## Tool Reference
@@ -335,7 +382,42 @@ The discovery process:
 `template_search` returns results from both local installed templates AND NuGet.org in a single ranked list. Local templates appear first (ready to use), NuGet results include package ID and version for installation.
 
 ### Smart Install
-`template_install` returns install status **and** full metadata for all templates in the package, so the AI can immediately proceed to instantiation without a second call.
+`template_install` returns install status **and** full metadata for all templates in the package, so the AI can immediately proceed to instantiation without a second call. It is also **idempotent**: if the package is already installed at the requested version, it skips the install and returns the existing metadata. If a different version is installed, it reports the current version and offers upgrade guidance.
+
+### Smart Defaults
+When creating or previewing a template, the server applies cross-parameter intelligence:
+- **AOT → Framework**: If `EnableAot` / `PublishAot` / `nativeAot` is true, suggests the latest framework from the template's choices
+- **Auth → HTTPS**: If `auth` is set to a non-None value, sets `NoHttps=false` to ensure HTTPS is enabled
+- **Controllers → MinimalAPIs**: If `UseControllers=true`, sets `UseMinimalAPIs=false` for consistency
+
+Applied defaults are included in the response under `AppliedSmartDefaults` so the AI can explain them.
+
+### NuGet Preview Inspect
+If `template_inspect` is called for a template that's not installed locally, the server automatically queries NuGet.org and returns available package metadata (ID, version, description, downloads) so the AI can suggest installation without a separate call.
+
+## Telemetry & Observability
+
+The MCP server exposes telemetry via `System.Diagnostics`, compatible with OpenTelemetry and any .NET metrics backend:
+
+- **`ActivitySource`**: `Microsoft.TemplateEngine.MCP` — distributed tracing for all tool calls
+- **`Meter`**: `Microsoft.TemplateEngine.MCP` — counters and histograms
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `mcp.tool.invocations` | Counter | Total tool calls |
+| `mcp.tool.errors` | Counter | Failed tool calls |
+| `mcp.tool.duration_ms` | Histogram | Tool execution time |
+| `mcp.templates.created` | Counter | Templates successfully instantiated |
+| `mcp.packages.installed` | Counter | Template packages installed |
+| `mcp.auto_resolves` | Counter | Auto-resolve attempts (NuGet search → install) |
+| `mcp.validation.failures` | Counter | Parameter validation failures |
+| `mcp.smart_defaults.applied` | Counter | Smart default parameters applied |
+
+To consume these metrics, configure an OpenTelemetry exporter or use `dotnet-counters`:
+
+```bash
+dotnet-counters monitor --process-id <PID> Microsoft.TemplateEngine.MCP
+```
 
 ## Architecture
 
@@ -393,21 +475,28 @@ dotnet-template-mcp/
 ├── src/Microsoft.TemplateEngine.MCP/
 │   ├── Host/
 │   │   ├── McpTemplateEngineHost.cs      # ITemplateEngineHost with HostIdentifier="ai"
-│   │   └── TemplateEngineService.cs      # Bootstrapper wrapper + NuGet search + validation
+│   │   └── TemplateEngineService.cs      # Bootstrapper wrapper + NuGet search + validation + smart defaults
 │   ├── Prompts/
 │   │   └── CreateProjectPrompt.cs        # create_project guided workflow
+│   ├── Telemetry/
+│   │   └── McpTelemetry.cs               # ActivitySource + Meter (OpenTelemetry-compatible)
 │   ├── Tools/
 │   │   ├── TemplateSearchTool.cs         # template_search (local + NuGet)
 │   │   ├── TemplateListTool.cs           # template_list
-│   │   ├── TemplateInspectTool.cs        # template_inspect
-│   │   ├── TemplateInstantiateTool.cs    # template_instantiate (auto-resolve + validation)
-│   │   ├── TemplateDryRunTool.cs         # template_dry_run (auto-resolve + validation)
-│   │   ├── TemplateInstallTool.cs        # template_install (with metadata return)
+│   │   ├── TemplateInspectTool.cs        # template_inspect (+ NuGet preview)
+│   │   ├── TemplateInstantiateTool.cs    # template_instantiate (auto-resolve + validation + smart defaults)
+│   │   ├── TemplateDryRunTool.cs         # template_dry_run (auto-resolve + validation + smart defaults)
+│   │   ├── TemplateInstallTool.cs        # template_install (idempotent, with metadata return)
 │   │   ├── TemplateUninstallTool.cs      # template_uninstall
 │   │   └── TemplateInstalledResourceTool.cs  # templates_installed
 │   ├── Program.cs                        # MCP server entry point
 │   └── Microsoft.TemplateEngine.MCP.csproj
 ├── test/Microsoft.TemplateEngine.MCP.Tests/
+│   ├── EndToEndTests.cs                  # Full workflow: search → inspect → dry-run → create → build
+│   ├── IntegrationTests.cs               # Real template engine integration tests
+│   ├── SmartDefaultsTests.cs             # Smart defaults logic tests
+│   ├── TemplateInstallToolTests.cs       # Idempotent install tests
+│   ├── TemplateInspectNuGetPreviewTests.cs # NuGet preview inspect tests
 │   ├── TemplateSearchToolTests.cs
 │   ├── TemplateListToolTests.cs
 │   ├── TemplateInspectToolTests.cs

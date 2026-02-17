@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.Json;
 using ModelContextProtocol.Server;
 
@@ -19,6 +20,10 @@ internal sealed class TemplateSearchTool
         [Description("Optional type filter (e.g., 'project', 'item', 'solution')")] string? type = null,
         CancellationToken cancellationToken = default)
     {
+        using var activity = McpTelemetry.StartToolActivity("template_search");
+        var sw = Stopwatch.StartNew();
+        try
+        {
         var resultList = new List<object>();
 
         // 1. Search locally installed templates (appear first — ready to use)
@@ -103,6 +108,12 @@ internal sealed class TemplateSearchTool
             }
         }
 
+        activity?.SetTag("mcp.result.count", resultList.Count);
         return JsonSerializer.Serialize(resultList, new JsonSerializerOptions { WriteIndented = true });
+        }
+        finally
+        {
+            McpTelemetry.RecordDuration("template_search", sw.Elapsed.TotalMilliseconds);
+        }
     }
 }

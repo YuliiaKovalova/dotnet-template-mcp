@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.Json;
 using ModelContextProtocol.Server;
 
@@ -17,6 +18,10 @@ internal sealed class TemplateUninstallTool
         [Description("Package identifier to uninstall (e.g., 'Microsoft.DotNet.Web.ProjectTemplates.8.0')")] string packageId,
         CancellationToken cancellationToken = default)
     {
+        using var activity = McpTelemetry.StartToolActivity("template_uninstall");
+        var sw = Stopwatch.StartNew();
+        try
+        {
         var managedPackages = await engineService.GetManagedTemplatePackagesAsync(cancellationToken).ConfigureAwait(false);
 
         var packageToUninstall = managedPackages.FirstOrDefault(p =>
@@ -25,6 +30,7 @@ internal sealed class TemplateUninstallTool
         if (packageToUninstall == null)
         {
             var installed = managedPackages.Select(p => p.Identifier).ToList();
+            McpTelemetry.RecordError(activity, "template_uninstall", $"Package '{packageId}' not found");
             return JsonSerializer.Serialize(
                 new
                 {
@@ -46,5 +52,10 @@ internal sealed class TemplateUninstallTool
         }).ToList();
 
         return JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+        }
+        finally
+        {
+            McpTelemetry.RecordDuration("template_uninstall", sw.Elapsed.TotalMilliseconds);
+        }
     }
 }

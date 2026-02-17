@@ -11,3 +11,5 @@ artifacts/
 
 ## NuGet
 *.nupkg
+
+TestResults/

@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.Json;
 using ModelContextProtocol.Server;
 
@@ -19,6 +20,10 @@ internal sealed class TemplateListTool
         [Description("Optional classification filter (e.g., 'Web', 'Console', 'Library')")] string? classification = null,
         CancellationToken cancellationToken = default)
     {
+        using var activity = McpTelemetry.StartToolActivity("template_list");
+        var sw = Stopwatch.StartNew();
+        try
+        {
         var templates = await engineService.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
 
         IEnumerable<Abstractions.ITemplateInfo> filtered = templates;
@@ -55,6 +60,12 @@ internal sealed class TemplateListTool
             Type = t.TagsCollection.GetValueOrDefault("type"),
         }).ToList();
 
+        activity?.SetTag("mcp.result.count", result.Count);
         return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+        }
+        finally
+        {
+            McpTelemetry.RecordDuration("template_list", sw.Elapsed.TotalMilliseconds);
+        }
     }
 }

@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.Json;
 using ModelContextProtocol.Server;
 
@@ -20,6 +21,10 @@ internal sealed class TemplateInstalledResourceTool
         TemplateEngineService engineService,
         CancellationToken cancellationToken = default)
     {
+        using var activity = McpTelemetry.StartToolActivity("templates_installed");
+        var sw = Stopwatch.StartNew();
+        try
+        {
         var templates = await engineService.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
 
         var result = templates.Select(t => new
@@ -37,8 +42,14 @@ internal sealed class TemplateInstalledResourceTool
             PostActionCount = t.PostActions.Count,
         }).ToList();
 
+        activity?.SetTag("mcp.result.count", result.Count);
         return JsonSerializer.Serialize(
             new { totalCount = result.Count, templates = result },
             new JsonSerializerOptions { WriteIndented = true });
+        }
+        finally
+        {
+            McpTelemetry.RecordDuration("templates_installed", sw.Elapsed.TotalMilliseconds);
+        }
     }
 }
