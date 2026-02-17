@@ -23,6 +23,7 @@ internal class TemplateEngineService : IDisposable
     private readonly Bootstrapper _bootstrapper;
     private readonly EngineEnvironmentSettings _environmentSettings;
     private readonly ILogger _logger;
+    private bool _sdkTemplatesInstalled;
 
     public TemplateEngineService(ILoggerFactory loggerFactory)
     {
@@ -32,8 +33,182 @@ internal class TemplateEngineService : IDisposable
         _bootstrapper = new Bootstrapper(host, virtualizeConfiguration: false, loadDefaultComponents: true);
     }
 
+    /// <summary>
+    /// Ensures SDK-bundled template packages are installed in the MCP host.
+    /// Scans the .NET SDK templates directory for nupkg files and installs any that are missing.
+    /// </summary>
+    private async Task EnsureSdkTemplatesInstalledAsync(CancellationToken cancellationToken)
+    {
+        if (_sdkTemplatesInstalled)
+        {
+            return;
+        }
+
+        _sdkTemplatesInstalled = true;
+
+        try
+        {
+            var sdkTemplatePaths = DiscoverSdkTemplatePackages();
+            if (sdkTemplatePaths.Count == 0)
+            {
+                _logger.LogDebug("No SDK template packages found.");
+                return;
+            }
+
+            // Get already-installed packages to avoid reinstalling
+            var installedPackages = await GetManagedTemplatePackagesAsync(cancellationToken).ConfigureAwait(false);
+            var installedIds = new HashSet<string>(
+                installedPackages
+                    .Select(p => p.Identifier)
+                    .Where(id => id != null),
+                StringComparer.OrdinalIgnoreCase);
+
+            var toInstall = new List<InstallRequest>();
+            foreach (var nupkgPath in sdkTemplatePaths)
+            {
+                // Check if this package is already installed (by path or package name)
+                var fileName = Path.GetFileNameWithoutExtension(nupkgPath);
+                if (installedIds.Any(id => id.Contains(fileName, StringComparison.OrdinalIgnoreCase) ||
+                                           nupkgPath.Contains(id, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                toInstall.Add(new InstallRequest(nupkgPath));
+            }
+
+            if (toInstall.Count > 0)
+            {
+                _logger.LogInformation("Installing {Count} SDK template package(s)...", toInstall.Count);
+                var results = await _bootstrapper.InstallTemplatePackagesAsync(toInstall, cancellationToken: cancellationToken).ConfigureAwait(false);
+                foreach (var result in results)
+                {
+                    if (result.Success)
+                    {
+                        _logger.LogInformation("Installed SDK templates from {Package}", result.InstallRequest.PackageIdentifier);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Failed to install {Package}: {Error}", result.InstallRequest.PackageIdentifier, result.ErrorMessage);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to discover SDK template packages. SDK templates may not be available.");
+        }
+    }
+
+    /// <summary>
+    /// Discover .nupkg files from the .NET SDK templates directory.
+    /// SDK templates are stored at {dotnet_root}/templates/{version}/*.nupkg
+    /// </summary>
+    internal static IReadOnlyList<string> DiscoverSdkTemplatePackages()
+    {
+        var results = new List<string>();
+
+        try
+        {
+            // Find the dotnet root directory
+            var dotnetRoot = GetDotnetRoot();
+            if (dotnetRoot == null)
+            {
+                return results;
+            }
+
+            var templatesRoot = Path.Combine(dotnetRoot, "templates");
+            if (!Directory.Exists(templatesRoot))
+            {
+                return results;
+            }
+
+            // Get the latest version directory
+            var versionDirs = Directory.GetDirectories(templatesRoot)
+                .OrderByDescending(d => Path.GetFileName(d))
+                .ToList();
+
+            foreach (var versionDir in versionDirs)
+            {
+                var nupkgs = Directory.GetFiles(versionDir, "*.nupkg");
+                if (nupkgs.Length > 0)
+                {
+                    // Deduplicate: when multiple versions of the same package exist,
+                    // keep only the highest version (last alphabetically)
+                    var byBaseName = nupkgs
+                        .GroupBy(path => ExtractPackageBaseName(Path.GetFileName(path)), StringComparer.OrdinalIgnoreCase)
+                        .Select(g => g.OrderByDescending(p => p).First());
+
+                    results.AddRange(byBaseName);
+                    break; // Use only the latest version directory
+                }
+            }
+        }
+        catch
+        {
+            // Silently ignore errors in discovery
+        }
+
+        return results;
+    }
+
+    private static string? GetDotnetRoot()
+    {
+        // Try DOTNET_ROOT env var first
+        var dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+        if (!string.IsNullOrEmpty(dotnetRoot) && Directory.Exists(dotnetRoot))
+        {
+            return dotnetRoot;
+        }
+
+        // Try to find dotnet on PATH
+        try
+        {
+            var dotnetPath = OperatingSystem.IsWindows()
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet")
+                : "/usr/share/dotnet";
+
+            if (Directory.Exists(dotnetPath))
+            {
+                return dotnetPath;
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Extract the base package name from a nupkg filename, stripping version numbers.
+    /// e.g., "microsoft.dotnet.common.projecttemplates.9.0.9.0.311.nupkg" → "microsoft.dotnet.common.projecttemplates"
+    /// </summary>
+    private static string ExtractPackageBaseName(string fileName)
+    {
+        // Remove .nupkg extension
+        var name = Path.GetFileNameWithoutExtension(fileName);
+
+        // Split on dots and take segments until we hit a numeric segment
+        var parts = name.Split('.');
+        var baseParts = new List<string>();
+        foreach (var part in parts)
+        {
+            if (int.TryParse(part, out _))
+            {
+                break;
+            }
+
+            baseParts.Add(part);
+        }
+
+        return baseParts.Count > 0 ? string.Join(".", baseParts) : name;
+    }
+
     public virtual async Task<IReadOnlyList<ITemplateInfo>> GetTemplatesAsync(CancellationToken cancellationToken = default)
     {
+        await EnsureSdkTemplatesInstalledAsync(cancellationToken).ConfigureAwait(false);
         return await _bootstrapper.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
     }
 
