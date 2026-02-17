@@ -78,6 +78,13 @@ internal static class McpTelemetry
             unit: "{defaults}",
             description: "Number of smart parameter defaults applied");
 
+    /// <summary>Intent resolution attempts via template_from_intent.</summary>
+    public static readonly Counter<long> IntentResolutions =
+        Meter.CreateCounter<long>(
+            "mcp.intent.resolutions",
+            unit: "{resolutions}",
+            description: "Number of intent resolution attempts");
+
     // ── Histograms ──
 
     /// <summary>Duration of MCP tool invocations in milliseconds.</summary>
