@@ -1,33 +1,47 @@
 # Microsoft.TemplateEngine.MCP
 
-An MCP (Model Context Protocol) server that wraps the .NET Template Engine, enabling AI agents to discover, inspect, and instantiate `dotnet new` templates via structured tool calls.
+An MCP server that lets AI agents work with `dotnet new` templates — search, inspect, preview, and create projects through natural conversation instead of memorizing CLI flags.
 
-## Overview
+## What is this?
 
-This server exposes the .NET Template Engine's capabilities as MCP tools, solving key problems for AI-driven development:
+Instead of this:
+```bash
+dotnet new list --language C#
+dotnet new webapi --help
+dotnet new webapi --auth Individual --use-controllers --name MyApi --output ./MyApi
+```
 
-- **Single-call parameter discovery** — `template_inspect` returns all parameters, constraints, and post-actions in one call (vs. multiple `dotnet new` CLI commands)
-- **Dry-run preview** — `template_dry_run` shows what files would be created without writing to disk
-- **SDK template auto-discovery** — automatically detects and installs SDK-bundled templates (`webapi`, `console`, `blazor`, etc.) on first access
-- **Smart defaults** — cross-parameter intelligence (e.g., `EnableAot=true` → suggest latest framework; `UseControllers=true` → set `UseMinimalAPIs=false`)
-- **Idempotent install** — `template_install` skips already-installed packages, reports upgrade opportunities for older versions
-- **NuGet preview** — `template_inspect` can preview metadata for templates not yet installed by querying NuGet.org
-- **AI-friendly metadata** — Uses `HostIdentifier = "ai"` to auto-discover `ai.host.json` files for enhanced template descriptions
-- **Telemetry** — `System.Diagnostics.ActivitySource` and `Meter` for backend-agnostic observability (OpenTelemetry-compatible)
-- **Standalone** — consumes template engine via NuGet packages, no engine modifications needed
+Your AI agent just says: *"I need a web API with authentication and controllers"* — and the MCP server figures out the rest.
 
-## MCP Tools
+## What can it do?
 
-| Tool | Description |
+### Core Tools (Phase 1)
+
+The bread and butter — everything you need to discover, preview, and create .NET projects:
+
+| Tool | What it does |
 |------|-------------|
-| `template_search` | Search templates locally **and** on NuGet.org in a unified ranked list |
-| `template_list` | List installed templates with filtering |
-| `template_inspect` | Full metadata inspection (parameters, constraints, post-actions) in a single call |
-| `template_instantiate` | Create a project/item — **auto-resolves** from NuGet if not installed, validates parameters, checks constraints |
-| `template_dry_run` | Preview creation effects without writing to disk — same smart behaviors as instantiate |
-| `template_install` | Install a template package and **return full metadata** for all installed templates |
-| `template_uninstall` | Remove an installed template package |
-| `templates_installed` | Structured listing of all installed templates |
+| `template_search` | Search locally **and** on NuGet.org — one call, ranked results |
+| `template_list` | List what's installed, filter by language/type/classification |
+| `template_inspect` | Get the full picture — parameters, constraints, post-actions, all in one shot |
+| `template_instantiate` | Create a project. If the template isn't installed? It'll find it on NuGet, install it, and create — all in one call |
+| `template_dry_run` | See what files would be created without touching disk |
+| `template_install` | Install a template package (skips if already there, tells you about upgrades) |
+| `template_uninstall` | Remove a template package |
+| `templates_installed` | Quick inventory of everything installed |
+
+### Intent Resolution (Phase 2) 🆕
+
+Tell the server what you want in plain English — it figures out which template and parameters to use. No LLM needed, works fully offline.
+
+| Tool | What it does |
+|------|-------------|
+| `template_from_intent` | *"web API with auth and controllers"* → webapi + `auth=Individual` + `UseControllers=true` |
+| `create_from_description` | Guided prompt: describe what you want → match → preview → create |
+
+The intent resolver knows 70+ keywords covering templates (`blazor`, `grpc`, `worker`, `maui`...), parameters (`authentication`, `native aot`, `docker`, `.NET 9`...), and languages (`C#`, `F#`, `VB`). It scores matches using a 5-factor algorithm and pre-fills parameters it can confidently resolve.
+
+**Don't want it?** Set `MCP_TEMPLATE_INTENT_RESOLUTION=false` and it's off.
 
 ## Installation
 
@@ -323,98 +337,79 @@ Get a structured listing of all installed templates with metadata counts.
 
 **Returns:** JSON with `totalCount` and array of templates, each including `ParameterCount`, `ConstraintCount`, `PostActionCount`.
 
-## Typical AI Agent Workflow
+## How AI agents actually use this
 
-### Simple (template already installed)
+### The easy way (Phase 2 intent resolution)
 ```
-template_instantiate("console", name: "MyApp")  → project created (1 call)
+You: "I need a web API with authentication, controllers, and Docker support"
+→ template_from_intent resolves to: webapi + auth=Individual + UseControllers=true + EnableDocker=true
+→ template_instantiate creates the project
 ```
+One natural sentence, done.
 
-### With discovery
+### The precise way (Phase 1 tools)
 ```
-1. template_search("web API")          → find matching templates (local + NuGet)
-2. template_inspect("webapi")          → discover all parameters in one call
-3. template_dry_run("webapi", ...)     → preview files without writing
+1. template_search("web API")          → find matching templates
+2. template_inspect("webapi")          → see all 25 parameters
+3. template_dry_run("webapi", ...)     → preview without writing
 4. template_instantiate("webapi", ...) → create the project
 ```
 
-### Auto-resolve (template NOT installed)
+### The lazy way
 ```
 template_instantiate("maui-blazor", name: "MyApp")
-  → auto-searches NuGet → installs package → creates project (1 call)
+  → not installed? auto-searches NuGet → installs → creates (1 call)
 ```
-
-This replaces 4+ `dotnet new` CLI commands with structured, AI-friendly tool calls.
 
 ## Smart Behaviors
 
-### Auto-Resolve
-If you call `template_instantiate` or `template_dry_run` with a template that's not installed, the server automatically:
-1. Searches NuGet.org for the template
-2. Installs the matching package
-3. Proceeds with instantiation or dry-run
+The server isn't just a thin wrapper — it actually thinks about what you're doing.
 
-If the match is ambiguous, it returns a list of candidates with a "did you mean...?" suggestion.
+### Auto-Resolve
+Ask for a template that's not installed? The server searches NuGet, installs the best match, and creates the project — all in one call. If it's not sure, it asks *"did you mean...?"* with candidates.
 
 ### Parameter Validation
-Before writing any files, the server validates parameters against the template's definition:
-- **Choice parameters** — checks the value is in the allowed set (e.g., `Framework: "net3.0"` → error with valid choices)
-- **Boolean parameters** — checks the value is `true` or `false`
-- **Integer parameters** — checks the value is a valid number
-- **Unknown parameters** — reports which parameters are available
-
-### Constraint Checking
-Before creation, the server checks template constraints and returns warnings:
-- **OS constraints** — e.g., "This template requires Windows but you are on Linux"
-- **SDK version constraints** — e.g., "Requires .NET 9.0 SDK"
-- **Workload constraints** — e.g., "Requires the MAUI workload"
-
-### SDK Template Auto-Discovery
-On first template operation, the server automatically scans the .NET SDK directory for bundled template packages (e.g., `console`, `webapi`, `classlib`, `blazor`, `worker`, etc.) and installs them into the MCP host's template cache. This means SDK templates are available immediately — no manual `template_install` required.
-
-The discovery process:
-1. Locates the SDK root (`DOTNET_ROOT` or default install path)
-2. Scans `{dotnet_root}/templates/{latest_version}/*.nupkg`
-3. Deduplicates packages by base name (keeps highest version)
-4. Installs only packages not already present
-
-### Unified Search
-`template_search` returns results from both local installed templates AND NuGet.org in a single ranked list. Local templates appear first (ready to use), NuGet results include package ID and version for installation.
-
-### Smart Install
-`template_install` returns install status **and** full metadata for all templates in the package, so the AI can immediately proceed to instantiation without a second call. It is also **idempotent**: if the package is already installed at the requested version, it skips the install and returns the existing metadata. If a different version is installed, it reports the current version and offers upgrade guidance.
+Catches mistakes before they hit disk:
+- Wrong choice value → *"Invalid 'net3.0' for Framework. Valid: net8.0, net9.0"*
+- Bad boolean → *"Expected true/false, got 'yes'"*
+- Unknown param → *"Available parameters: Framework, auth, UseControllers..."*
 
 ### Smart Defaults
-When creating or previewing a template, the server applies cross-parameter intelligence:
-- **AOT → Framework**: If `EnableAot` / `PublishAot` / `nativeAot` is true, suggests the latest framework from the template's choices
-- **Auth → HTTPS**: If `auth` is set to a non-None value, sets `NoHttps=false` to ensure HTTPS is enabled
-- **Controllers → MinimalAPIs**: If `UseControllers=true`, sets `UseMinimalAPIs=false` for consistency
+Cross-parameter intelligence so you don't have to think about every flag:
+- `EnableAot=true` → auto-suggests the latest framework
+- `auth=Individual` → makes sure HTTPS stays enabled
+- `UseControllers=true` → sets `UseMinimalAPIs=false` (they're mutually exclusive)
 
-Applied defaults are included in the response under `AppliedSmartDefaults` so the AI can explain them.
+Shows what it changed in `AppliedSmartDefaults` so nothing is a surprise.
 
-### NuGet Preview Inspect
-If `template_inspect` is called for a template that's not installed locally, the server automatically queries NuGet.org and returns available package metadata (ID, version, description, downloads) so the AI can suggest installation without a separate call.
+### Constraint Checking
+Warns you before creation if something's going to be a problem — wrong OS, missing SDK version, missing workload.
+
+### SDK Template Auto-Discovery
+First time you use the server, it finds all SDK-bundled templates (`console`, `webapi`, `blazor`, etc.) and installs them automatically. No `template_install` needed for the basics.
+
+### Idempotent Install
+`template_install` won't reinstall something that's already there. If there's a newer version, it tells you.
+
+### NuGet Preview
+`template_inspect` on a template that isn't installed? It queries NuGet.org and shows you the package metadata so you can decide whether to install.
+
+## Feature Flags
+
+| Environment Variable | Default | What it controls |
+|---------------------|---------|-----------------|
+| `MCP_TEMPLATE_INTENT_RESOLUTION` | `true` | Intent resolution tools (`template_from_intent`, `create_from_description`) |
+
+Set to `false`, `0`, `no`, or `off` to disable. The core tools always work regardless.
 
 ## Telemetry & Observability
 
-The MCP server exposes telemetry via `System.Diagnostics`, compatible with OpenTelemetry and any .NET metrics backend:
+Everything is instrumented via `System.Diagnostics` — plug in any OpenTelemetry-compatible backend and you're good:
 
-- **`ActivitySource`**: `Microsoft.TemplateEngine.MCP` — distributed tracing for all tool calls
-- **`Meter`**: `Microsoft.TemplateEngine.MCP` — counters and histograms
+- **Tracing**: `ActivitySource` named `Microsoft.TemplateEngine.MCP` — every tool call gets a span
+- **Metrics**: `Meter` with counters for invocations, errors, templates created, packages installed, auto-resolves, validation failures, smart defaults applied, and intent resolutions
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `mcp.tool.invocations` | Counter | Total tool calls |
-| `mcp.tool.errors` | Counter | Failed tool calls |
-| `mcp.tool.duration_ms` | Histogram | Tool execution time |
-| `mcp.templates.created` | Counter | Templates successfully instantiated |
-| `mcp.packages.installed` | Counter | Template packages installed |
-| `mcp.auto_resolves` | Counter | Auto-resolve attempts (NuGet search → install) |
-| `mcp.validation.failures` | Counter | Parameter validation failures |
-| `mcp.smart_defaults.applied` | Counter | Smart default parameters applied |
-
-To consume these metrics, configure an OpenTelemetry exporter or use `dotnet-counters`:
-
+Quick way to see what's happening:
 ```bash
 dotnet-counters monitor --process-id <PID> Microsoft.TemplateEngine.MCP
 ```
@@ -447,26 +442,28 @@ The MCP server uses `fallbackHostTemplateConfigNames: ["dotnetcli.host.json"]` s
 - `Microsoft.TemplateSearch.Common` — `TemplateSearchCoordinator` for NuGet search
 - `ModelContextProtocol` — C# MCP SDK for tool registration and stdio transport
 
-## MCP Prompt
+## MCP Prompts
 
 ### `create_project`
 
-A guided prompt that walks the AI through the full project creation workflow:
+Step-by-step guided workflow: search → inspect → suggest params → dry-run → create.
 
-1. Search for templates matching your description
-2. Inspect the best match for parameters and constraints
-3. Suggest parameter values
-4. Preview with dry-run
-5. Create the project after confirmation
+*"I want to create a new web API with authentication"*
 
-**Usage in AI chat:** *"I want to create a new web API with authentication"*
+### `create_from_description` 🆕
+
+Same idea but starts with intent resolution — describe what you want in plain English and the server figures out the template and parameters for you.
+
+*"I need a Blazor app with individual accounts auth and Docker support"*
 
 ## Building & Testing
 
 ```bash
 dotnet build
-dotnet test
+dotnet test    # 108 tests — unit, integration, and E2E
 ```
+
+CI runs automatically on push/PR via GitHub Actions (build + test on Ubuntu and Windows).
 
 ## Project Structure
 
@@ -476,8 +473,14 @@ dotnet-template-mcp/
 │   ├── Host/
 │   │   ├── McpTemplateEngineHost.cs      # ITemplateEngineHost with HostIdentifier="ai"
 │   │   └── TemplateEngineService.cs      # Bootstrapper wrapper + NuGet search + validation + smart defaults
+│   ├── Intent/                           # 🆕 Phase 2
+│   │   ├── IIntentResolver.cs            # Intent resolution interface
+│   │   ├── TemplateResolution.cs         # Resolution models (matches, confidence, params)
+│   │   ├── IntentSynonymDictionary.cs    # 70+ keyword → template/param mappings
+│   │   └── ClassificationBasedIntentResolver.cs  # 5-factor scoring resolver
 │   ├── Prompts/
-│   │   └── CreateProjectPrompt.cs        # create_project guided workflow
+│   │   ├── CreateProjectPrompt.cs        # create_project guided workflow
+│   │   └── CreateFromDescriptionPrompt.cs # 🆕 create_from_description (intent-based)
 │   ├── Telemetry/
 │   │   └── McpTelemetry.cs               # ActivitySource + Meter (OpenTelemetry-compatible)
 │   ├── Tools/
@@ -485,23 +488,30 @@ dotnet-template-mcp/
 │   │   ├── TemplateListTool.cs           # template_list
 │   │   ├── TemplateInspectTool.cs        # template_inspect (+ NuGet preview)
 │   │   ├── TemplateInstantiateTool.cs    # template_instantiate (auto-resolve + validation + smart defaults)
-│   │   ├── TemplateDryRunTool.cs         # template_dry_run (auto-resolve + validation + smart defaults)
-│   │   ├── TemplateInstallTool.cs        # template_install (idempotent, with metadata return)
+│   │   ├── TemplateDryRunTool.cs         # template_dry_run
+│   │   ├── TemplateInstallTool.cs        # template_install (idempotent)
 │   │   ├── TemplateUninstallTool.cs      # template_uninstall
-│   │   └── TemplateInstalledResourceTool.cs  # templates_installed
-│   ├── Program.cs                        # MCP server entry point
+│   │   ├── TemplateInstalledResourceTool.cs  # templates_installed
+│   │   └── TemplateFromIntentTool.cs     # 🆕 template_from_intent
+│   ├── McpFeatureFlags.cs                # 🆕 Feature toggles (env var based)
+│   ├── Program.cs
 │   └── Microsoft.TemplateEngine.MCP.csproj
 ├── test/Microsoft.TemplateEngine.MCP.Tests/
-│   ├── EndToEndTests.cs                  # Full workflow: search → inspect → dry-run → create → build
-│   ├── IntegrationTests.cs               # Real template engine integration tests
-│   ├── SmartDefaultsTests.cs             # Smart defaults logic tests
-│   ├── TemplateInstallToolTests.cs       # Idempotent install tests
-│   ├── TemplateInspectNuGetPreviewTests.cs # NuGet preview inspect tests
+│   ├── IntentSynonymDictionaryTests.cs   # 🆕 Keyword extraction tests
+│   ├── IntentResolverTests.cs            # 🆕 Resolver integration tests
+│   ├── FeatureFlagsTests.cs              # 🆕 Toggle tests
+│   ├── TemplateFromIntentToolTests.cs    # 🆕 Intent tool tests
+│   ├── EndToEndTests.cs                  # Full workflow E2E
+│   ├── IntegrationTests.cs              # Real engine integration
+│   ├── SmartDefaultsTests.cs            # Smart defaults logic
+│   ├── TemplateInstallToolTests.cs      # Idempotent install
+│   ├── TemplateInspectNuGetPreviewTests.cs
 │   ├── TemplateSearchToolTests.cs
 │   ├── TemplateListToolTests.cs
 │   ├── TemplateInspectToolTests.cs
 │   ├── ParameterParsingTests.cs
 │   └── ParameterValidationTests.cs
+├── .github/workflows/ci.yml             # 🆕 GitHub Actions CI
 └── Microsoft.TemplateEngine.MCP.sln
 ```
 
