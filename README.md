@@ -74,6 +74,16 @@ The server also does **smart defaults** (AOT → latest framework, auth → HTTP
 
 📖 [Architecture & smart behaviors →](docs/architecture.md)
 
+## Documentation
+
+| Doc | What's in it |
+|-----|-------------|
+| [Configuration](docs/configuration.md) | VS Code, Claude Desktop, Cursor setup + troubleshooting |
+| [Tool Reference](docs/tool-reference.md) | Every tool's parameters, types, and examples |
+| [Architecture](docs/architecture.md) | Template cache, smart behaviors, telemetry, project structure |
+| [MCP vs Skills](docs/mcp-vs-skills.md) | Why MCP over Copilot Skills — benefits and downsides |
+| [Skills Equivalent](docs/skills-equivalent.md) | What it'd take to cover this with Skills instead |
+
 ## Building & Testing
 
 ```bash
