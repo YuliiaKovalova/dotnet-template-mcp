@@ -24,7 +24,7 @@ Add to `%APPDATA%\Code\User\mcp.json` (Windows) or `.vscode/mcp.json` in your wo
     "dotnet-templates": {
       "type": "stdio",
       "command": "dnx",
-      "args": ["-y", "Microsoft.TemplateEngine.MCP"]
+      "args": ["-y", "DotnetTemplateMCP"]
     }
   }
 }
@@ -93,13 +93,13 @@ Add to `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/App
   "mcpServers": {
     "dotnet-templates": {
       "command": "dnx",
-      "args": ["-y", "Microsoft.TemplateEngine.MCP"]
+      "args": ["-y", "DotnetTemplateMCP"]
     }
   }
 }
 ```
 
-## Any MCP client (stdio)
+## Any MCP client(stdio)
 
 ```bash
 template-engine-mcp
@@ -127,7 +127,7 @@ To apply globally, add the same text to VS Code settings under `github.copilot.c
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `ENOENT` or "command not found" | `~/.dotnet/tools` not on PATH | Use `dnx -y Microsoft.TemplateEngine.MCP` or full path |
+| `ENOENT` or "command not found" | `~/.dotnet/tools` not on PATH | Use `dnx -y DotnetTemplateMCP` or full path |
 | `spawn template-engine-mcp ENOENT` in VS Code | Same | Switch to `dnx` config shown above |
 | `template_search` returns empty | MCP server has its own cache | SDK templates auto-install on first access; use `template_install` for others |
 | Copilot uses `dotnet new` instead of MCP tools | No instructions file | Add `.github/copilot-instructions.md` (see above) |
