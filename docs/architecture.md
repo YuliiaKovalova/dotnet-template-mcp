@@ -83,14 +83,15 @@ Set to `false`, `0`, `no`, or `off` to disable.
 ```
 dotnet-template-mcp/
 ├── src/Microsoft.TemplateEngine.MCP/
+│   ├── Analysis/                          # Project analyzer + template generator
 │   ├── Host/                             # Template engine host + service
 │   ├── Intent/                           # Phase 2: intent resolution
 │   ├── Prompts/                          # MCP prompts
 │   ├── Telemetry/                        # ActivitySource + Meter
-│   ├── Tools/                            # MCP tools (9 tools)
+│   ├── Tools/                            # MCP tools (10 tools)
 │   ├── McpFeatureFlags.cs                # Feature toggles
 │   └── Program.cs                        # Entry point
-├── test/Microsoft.TemplateEngine.MCP.Tests/  # 108 tests
+├── test/Microsoft.TemplateEngine.MCP.Tests/  # 143 tests
 ├── docs/
 │   ├── architecture.md                   # This file
 │   ├── configuration.md                  # MCP client setup + troubleshooting

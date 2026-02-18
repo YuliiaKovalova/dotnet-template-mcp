@@ -24,6 +24,7 @@ Your AI agent just says: *"I need a web API with authentication and controllers"
 | `template_uninstall` | Remove a template package |
 | `templates_installed` | Inventory of everything installed |
 | `template_from_intent` | *"web API with auth"* → webapi + `auth=Individual` — no LLM needed |
+| `template_create_from_existing` | Analyze a .csproj → generate a reusable template matching repo conventions |
 
 📖 [Full tool reference →](docs/tool-reference.md)
 
@@ -88,7 +89,7 @@ The server also does **smart defaults** (AOT → latest framework, auth → HTTP
 
 ```bash
 dotnet build
-dotnet test    # 108 tests — unit, integration, and E2E
+dotnet test    # 143 tests — unit, integration, and E2E
 ```
 
 CI runs on push/PR via [GitHub Actions](.github/workflows/ci.yml) (Ubuntu + Windows).

@@ -102,6 +102,22 @@ Resolve a natural-language description to ranked template matches with pre-fille
 
 ---
 
+## `template_create_from_existing`
+
+Analyze an existing .csproj file and generate a reusable dotnet template that preserves its exact conventions. Solves the 6 gaps between `dotnet new` generic templates and real repo projects: SDK type, analyzer metadata, OutputType, CPM, custom build props, and repo conventions.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `projectPath` | string | Yes | Full path to the .csproj to analyze |
+| `templateName` | string | Yes | Human-readable name (e.g., "Repo Unit Test Project") |
+| `shortName` | string | No | Short name for `dotnet new <shortname>` |
+| `outputPath` | string | No | Where to generate the template (defaults to `../templates/`) |
+| `install` | bool | No | If true, installs the template immediately |
+
+Returns: project analysis (SDK, properties, packages with metadata, CPM detection), gaps report (what `dotnet new` would get wrong), generated template path, and next steps.
+
+---
+
 ## MCP Prompts
 
 ### `create_project`
