@@ -85,6 +85,13 @@ internal static class McpTelemetry
             unit: "{resolutions}",
             description: "Number of intent resolution attempts");
 
+    /// <summary>Templates generated from existing projects via template_create_from_existing.</summary>
+    public static readonly Counter<long> TemplatesGeneratedFromExisting =
+        Meter.CreateCounter<long>(
+            "mcp.templates.generated_from_existing",
+            unit: "{templates}",
+            description: "Number of templates generated from existing project analysis");
+
     // ── Histograms ──
 
     /// <summary>Duration of MCP tool invocations in milliseconds.</summary>
