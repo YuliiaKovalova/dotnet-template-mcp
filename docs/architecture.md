@@ -91,7 +91,14 @@ dotnet-template-mcp/
 │   ├── McpFeatureFlags.cs                # Feature toggles
 │   └── Program.cs                        # Entry point
 ├── test/Microsoft.TemplateEngine.MCP.Tests/  # 108 tests
-├── docs/                                 # Documentation
-├── .github/workflows/ci.yml             # CI pipeline
+├── docs/
+│   ├── architecture.md                   # This file
+│   ├── configuration.md                  # MCP client setup + troubleshooting
+│   ├── tool-reference.md                 # Full tool parameter reference
+│   ├── mcp-vs-skills.md                  # MCP vs Copilot Skills comparison
+│   └── skills-equivalent.md              # Skills-based equivalent analysis
+├── .github/
+│   ├── workflows/ci.yml                  # CI pipeline
+│   └── copilot-instructions.md           # Copilot tool routing
 └── Microsoft.TemplateEngine.MCP.sln
 ```
