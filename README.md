@@ -45,6 +45,15 @@ The intent resolver knows 70+ keywords covering templates (`blazor`, `grpc`, `wo
 
 ## Installation
 
+### Zero-install with `dnx` (.NET 10+)
+
+No installation needed — just run:
+```bash
+dnx -y Microsoft.TemplateEngine.MCP
+```
+
+This downloads and runs the tool on the fly, just like `npx` in Node.js. Perfect for trying it out or CI/CD.
+
 ### As a .NET global tool
 
 ```bash
@@ -120,7 +129,21 @@ If `~/.dotnet/tools` is on your `PATH`, you can use the short form:
 
 Add to your user-level MCP config (`%APPDATA%\Code\User\mcp.json` on Windows) or `.vscode/mcp.json` in your workspace.
 
-**Recommended** — use `dotnet tool run` (avoids PATH issues entirely):
+**Recommended** — use `dnx` for zero-install (.NET 10+):
+
+```json
+{
+  "servers": {
+    "dotnet-templates": {
+      "type": "stdio",
+      "command": "dnx",
+      "args": ["-y", "Microsoft.TemplateEngine.MCP"]
+    }
+  }
+}
+```
+
+**Alternative** — use `dotnet tool run` (requires local tool install):
 
 ```json
 {
@@ -133,8 +156,6 @@ Add to your user-level MCP config (`%APPDATA%\Code\User\mcp.json` on Windows) or
   }
 }
 ```
-
-> Requires the tool to be installed as a local tool in the workspace (see [Installation](#installation)).
 
 **Alternative** — use the full path to the executable:
 
@@ -185,20 +206,21 @@ Add to Cursor settings → MCP Servers:
 {
   "mcpServers": {
     "dotnet-templates": {
-      "command": "dotnet",
-      "args": ["tool", "run", "template-engine-mcp"]
+      "command": "dnx",
+      "args": ["-y", "Microsoft.TemplateEngine.MCP"]
     }
   }
 }
 ```
 
-Or using the global tool directly:
+Or using `dotnet tool run` (requires local install):
 
 ```json
 {
   "mcpServers": {
     "dotnet-templates": {
-      "command": "template-engine-mcp"
+      "command": "dotnet",
+      "args": ["tool", "run", "template-engine-mcp"]
     }
   }
 }
