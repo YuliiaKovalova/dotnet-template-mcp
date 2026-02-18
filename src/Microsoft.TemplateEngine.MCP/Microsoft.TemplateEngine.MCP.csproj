@@ -3,6 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
+    <RollForward>LatestMajor</RollForward>
     <RootNamespace>Microsoft.TemplateEngine.MCP</RootNamespace>
     <AssemblyName>Microsoft.TemplateEngine.MCP</AssemblyName>
     <Description>MCP (Model Context Protocol) server wrapping the .NET Template Engine for AI-driven template discovery, inspection, and instantiation.</Description>
