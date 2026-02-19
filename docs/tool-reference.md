@@ -40,19 +40,42 @@ Full metadata in one call: parameters (names, types, defaults, choices), constra
 
 Create a project or item from a template. **Writes files to disk.** Auto-resolves from NuGet if not installed, validates parameters, checks constraints, applies smart defaults.
 
+**Post-creation intelligence:**
+- **CPM (Central Package Management)** — detects `Directory.Packages.props` in the directory tree. If found, strips `Version` attributes from generated `.csproj` PackageReferences and adds `<PackageVersion>` entries to `Directory.Packages.props`.
+- **Latest NuGet versions** — queries the NuGet V3 API for the latest stable version of every package reference, replacing the template's hardcoded (often stale) versions. Set `resolveLatestVersions=false` to keep original versions.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `templateName` | string | Yes | Template identity or short name |
 | `name` | string | No | Project/item name |
 | `outputPath` | string | No | Output directory |
 | `parametersJson` | string | No | JSON object of parameter values |
+| `resolveLatestVersions` | bool | No | Resolve latest stable NuGet versions (default: true) |
 
 Example call:
 ```json
 {
-  "templateName": "console",
-  "name": "MyApp",
-  "parametersJson": "{\"Framework\": \"net8.0\"}"
+  "templateName": "webapi",
+  "name": "MyApi",
+  "parametersJson": "{\"Framework\": \"net9.0\", \"auth\": \"Individual\"}"
+}
+```
+
+Example response (CPM solution):
+```json
+{
+  "Status": "Success",
+  "PostCreation": {
+    "CpmDetected": true,
+    "DirectoryPackagesPropsPath": "C:\\myrepo\\Directory.Packages.props",
+    "VersionUpgrades": [
+      { "PackageName": "Swashbuckle.AspNetCore", "OldVersion": "6.6.2", "NewVersion": "7.2.0" }
+    ],
+    "VersionsStrippedFromCsproj": ["Microsoft.AspNetCore.OpenApi", "Swashbuckle.AspNetCore"],
+    "AddedToDirectoryPackagesProps": [
+      { "PackageName": "Swashbuckle.AspNetCore", "Version": "7.2.0" }
+    ]
+  }
 }
 ```
 

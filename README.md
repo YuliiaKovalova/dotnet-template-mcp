@@ -75,6 +75,37 @@ You: "I need a web API with authentication, controllers, and Docker support"
 
 The server also does **smart defaults** (AOT → latest framework, auth → HTTPS stays on), **parameter validation** before writing files, **constraint checking** (OS, SDK, workload), and **auto-resolves** templates from NuGet if they're not installed.
 
+### CPM & Latest Package Versions
+
+When creating a project inside a solution that uses [Central Package Management](https://learn.microsoft.com/nuget/consume-packages/central-package-management), the server automatically:
+
+1. **Detects** `Directory.Packages.props` by walking up the directory tree
+2. **Strips** `Version` attributes from generated `.csproj` PackageReferences
+3. **Adds** missing `<PackageVersion>` entries to `Directory.Packages.props`
+4. **Resolves** latest stable NuGet versions — no more stale hardcoded versions from templates
+
+```
+Before (what dotnet new generates):
+  <PackageReference Include="Serilog" Version="3.1.0" />    ← stale, breaks CPM
+
+After (what template_instantiate produces):
+  .csproj:                    <PackageReference Include="Serilog" />
+  Directory.Packages.props:   <PackageVersion Include="Serilog" Version="4.2.0" />
+```
+
+Works for standalone projects too — versions are updated directly in the `.csproj`.
+
+### Multi-Template Composition
+
+Chain multiple templates in one call with `template_compose`:
+
+```json
+[
+  {"templateName": "webapi", "name": "MyApi", "parametersJson": "{\"auth\": \"Individual\"}"},
+  {"templateName": "gitignore", "target": "."}
+]
+```
+
 📖 [Architecture & smart behaviors →](docs/architecture.md)
 
 ## Documentation
@@ -91,7 +122,7 @@ The server also does **smart defaults** (AOT → latest framework, auth → HTTP
 
 ```bash
 dotnet build
-dotnet test    # 158 tests — unit, integration, and E2E
+dotnet test    # 170 tests — unit, integration, and E2E
 ```
 
 CI runs on push/PR via [GitHub Actions](.github/workflows/ci.yml) (Ubuntu + Windows).
