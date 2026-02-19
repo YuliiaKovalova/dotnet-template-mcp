@@ -35,13 +35,13 @@ Your AI agent just says: *"I need a web API with authentication and controllers"
 ### Zero-install with `dnx` (.NET 10+)
 
 ```bash
-dnx -y DotnetTemplateMCP --version 0.1.0-preview.2
+dnx -y DotnetTemplateMCP --version 0.1.0-preview.3
 ```
 
 ### Global tool
 
 ```bash
-dotnet tool install --global DotnetTemplateMCP --version 0.1.0-preview.2
+dotnet tool install --global DotnetTemplateMCP --version 0.1.0-preview.3
 ```
 
 ### VS Code / GitHub Copilot
@@ -54,7 +54,7 @@ Add to `mcp.json`:
     "dotnet-templates": {
       "type": "stdio",
       "command": "dnx",
-      "args": ["-y", "DotnetTemplateMCP", "--version", "0.1.0-preview.2"]
+      "args": ["-y", "DotnetTemplateMCP", "--version", "0.1.0-preview.3"]
     }
   }
 }
