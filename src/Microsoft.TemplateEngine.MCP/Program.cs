@@ -4,6 +4,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.TemplateEngine.MCP.Host;
 
 namespace Microsoft.TemplateEngine.MCP;
 
@@ -17,6 +18,7 @@ internal sealed class Program
         var featureFlags = McpFeatureFlags.FromEnvironment();
         builder.Services.AddSingleton(featureFlags);
         builder.Services.AddSingleton<TemplateEngineService>();
+        builder.Services.AddSingleton<TemplateEngineFacade>();
         builder.Services
             .AddMcpServer(options =>
             {

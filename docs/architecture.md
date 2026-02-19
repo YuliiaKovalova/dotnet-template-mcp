@@ -88,10 +88,10 @@ dotnet-template-mcp/
 │   ├── Intent/                           # Phase 2: intent resolution
 │   ├── Prompts/                          # MCP prompts
 │   ├── Telemetry/                        # ActivitySource + Meter
-│   ├── Tools/                            # MCP tools (10 tools)
+│   ├── Tools/                            # MCP tools (12 tools)
 │   ├── McpFeatureFlags.cs                # Feature toggles
 │   └── Program.cs                        # Entry point
-├── test/Microsoft.TemplateEngine.MCP.Tests/  # 143 tests
+├── test/Microsoft.TemplateEngine.MCP.Tests/  # 158 tests
 ├── docs/
 │   ├── architecture.md                   # This file
 │   ├── configuration.md                  # MCP client setup + troubleshooting
