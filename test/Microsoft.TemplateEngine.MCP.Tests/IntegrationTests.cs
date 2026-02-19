@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.TemplateEngine.MCP.PostCreation;
 using Microsoft.TemplateEngine.MCP.Tools;
 using Xunit;
 
@@ -17,12 +18,14 @@ namespace Microsoft.TemplateEngine.MCP.Tests;
 public class IntegrationTests : IDisposable
 {
     private readonly TemplateEngineService _service;
+    private readonly PostCreationProcessor _postProcessor;
     private readonly string _tempDir;
 
     public IntegrationTests()
     {
         var loggerFactory = LoggerFactory.Create(builder => builder.AddDebug());
         _service = new TemplateEngineService(loggerFactory);
+        _postProcessor = new PostCreationProcessor(loggerFactory);
         _tempDir = Path.Combine(Path.GetTempPath(), $"mcp-integration-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
     }
@@ -120,7 +123,7 @@ public class IntegrationTests : IDisposable
         var outputPath = Path.Combine(_tempDir, "InstantiateTest");
 
         var result = await TemplateInstantiateTool.InstantiateTemplateAsync(
-            _service, "console", "TestConsoleApp", outputPath);
+            _service, _postProcessor, "console", "TestConsoleApp", outputPath);
 
         var parsed = JsonSerializer.Deserialize<JsonElement>(result);
         Assert.Equal("Success", parsed.GetProperty("Status").GetString());
@@ -137,7 +140,7 @@ public class IntegrationTests : IDisposable
         var outputPath = Path.Combine(_tempDir, "ValidationTest");
 
         var result = await TemplateInstantiateTool.InstantiateTemplateAsync(
-            _service, "console", "ValidationApp", outputPath,
+            _service, _postProcessor, "console", "ValidationApp", outputPath,
             "{\"Framework\": \"net3.0\"}");
 
         var parsed = JsonSerializer.Deserialize<JsonElement>(result);

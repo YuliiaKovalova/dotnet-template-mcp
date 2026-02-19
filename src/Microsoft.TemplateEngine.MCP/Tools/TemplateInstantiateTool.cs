@@ -4,6 +4,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.TemplateEngine.MCP.PostCreation;
 using ModelContextProtocol.Server;
 using ITemplateCreationResult = Microsoft.TemplateEngine.Edge.Template.ITemplateCreationResult;
 
@@ -13,13 +14,15 @@ namespace Microsoft.TemplateEngine.MCP.Tools;
 internal sealed class TemplateInstantiateTool
 {
     [McpServerTool(Name = "template_instantiate")]
-    [Description("Create a project or item from a template. If the template is not installed, it will automatically search NuGet, install, and create in one call. Validates parameters and checks constraints before writing to disk.")]
+    [Description("Create a project or item from a template. If the template is not installed, it will automatically search NuGet, install, and create in one call. Validates parameters and checks constraints before writing to disk. Automatically detects CPM (Central Package Management) and adapts package references. Can resolve latest stable NuGet package versions.")]
     public static async Task<string> InstantiateTemplateAsync(
         TemplateEngineService engineService,
+        PostCreationProcessor postProcessor,
         [Description("Template identity or short name")] string templateName,
         [Description("Name for the created project/item")] string? name = null,
         [Description("Output directory path where files will be created")] string? outputPath = null,
         [Description("JSON object of parameter name-value pairs (e.g., {\"Framework\": \"net8.0\", \"EnableAot\": \"true\"})")] string? parametersJson = null,
+        [Description("If true, resolve latest stable NuGet versions for all package references (default: true)")] bool resolveLatestVersions = true,
         CancellationToken cancellationToken = default)
     {
         using var activity = McpTelemetry.StartToolActivity("template_instantiate");
@@ -87,7 +90,17 @@ internal sealed class TemplateInstantiateTool
 
         McpTelemetry.TemplatesCreated.Add(1);
         activity?.SetTag("mcp.template.identity", template.Identity);
-        return SerializeCreationResult(result, autoInstallMessage, constraintWarnings, smartDefaults.Count > 0 ? smartDefaults : null);
+
+        // 7. Post-creation processing: CPM adaptation + NuGet version upgrades
+        PostCreationResult? postCreationResult = null;
+        if (result.Status == Microsoft.TemplateEngine.Edge.Template.CreationResultStatus.Success)
+        {
+            postCreationResult = await postProcessor.ProcessAsync(
+                resolvedOutputPath, resolveLatestVersions, cancellationToken).ConfigureAwait(false);
+        }
+
+        return SerializeCreationResult(result, autoInstallMessage, constraintWarnings,
+            smartDefaults.Count > 0 ? smartDefaults : null, postCreationResult);
         }
         finally
         {
@@ -124,7 +137,8 @@ internal sealed class TemplateInstantiateTool
         ITemplateCreationResult result,
         string? autoInstallMessage = null,
         IReadOnlyList<string>? constraintWarnings = null,
-        IReadOnlyDictionary<string, string>? appliedSmartDefaults = null)
+        IReadOnlyDictionary<string, string>? appliedSmartDefaults = null,
+        PostCreationResult? postCreationResult = null)
     {
         var postActions = result.CreationResult?.PostActions?.Select(pa => new
         {
@@ -143,6 +157,35 @@ internal sealed class TemplateInstantiateTool
             ChangeKind = fc.ChangeKind.ToString(),
         }).ToList();
 
+        // Build post-creation summary
+        object? postCreationSummary = null;
+        if (postCreationResult?.HasChanges == true)
+        {
+            var allUpgrades = postCreationResult.ProcessedFiles
+                .SelectMany(f => f.VersionUpgrades)
+                .Select(u => new { u.PackageName, u.OldVersion, u.NewVersion })
+                .ToList();
+
+            var allStripped = postCreationResult.ProcessedFiles
+                .SelectMany(f => f.VersionsStripped)
+                .Distinct()
+                .ToList();
+
+            var allAddedToProps = postCreationResult.ProcessedFiles
+                .SelectMany(f => f.AddedToDirectoryPackagesProps)
+                .Select(e => new { e.PackageName, e.Version })
+                .ToList();
+
+            postCreationSummary = new
+            {
+                CpmDetected = postCreationResult.CpmDetected,
+                DirectoryPackagesPropsPath = postCreationResult.DirectoryPackagesPropsPath,
+                VersionUpgrades = allUpgrades.Count > 0 ? allUpgrades : null,
+                VersionsStrippedFromCsproj = allStripped.Count > 0 ? allStripped : null,
+                AddedToDirectoryPackagesProps = allAddedToProps.Count > 0 ? allAddedToProps : null,
+            };
+        }
+
         var response = new
         {
             Status = result.Status.ToString(),
@@ -152,6 +195,7 @@ internal sealed class TemplateInstantiateTool
             AutoInstalled = autoInstallMessage,
             ConstraintWarnings = constraintWarnings?.Count > 0 ? constraintWarnings : null,
             AppliedSmartDefaults = appliedSmartDefaults?.Count > 0 ? appliedSmartDefaults : null,
+            PostCreation = postCreationSummary,
             PrimaryOutputs = primaryOutputs,
             PostActions = postActions,
             FileChanges = fileChanges,

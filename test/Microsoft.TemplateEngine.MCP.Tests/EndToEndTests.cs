@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.TemplateEngine.MCP.PostCreation;
 using Microsoft.TemplateEngine.MCP.Tools;
 using Xunit;
 using Xunit.Abstractions;
@@ -18,6 +19,7 @@ namespace Microsoft.TemplateEngine.MCP.Tests;
 public class EndToEndTests : IDisposable
 {
     private readonly TemplateEngineService _service;
+    private readonly PostCreationProcessor _postProcessor;
     private readonly string _tempDir;
     private readonly ITestOutputHelper _output;
 
@@ -26,6 +28,7 @@ public class EndToEndTests : IDisposable
         _output = output;
         var loggerFactory = LoggerFactory.Create(builder => builder.AddDebug());
         _service = new TemplateEngineService(loggerFactory);
+        _postProcessor = new PostCreationProcessor(loggerFactory);
         _tempDir = Path.Combine(Path.GetTempPath(), $"mcp-e2e-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
 
@@ -99,7 +102,7 @@ public class EndToEndTests : IDisposable
         // 4. Instantiate (no Framework override — use template default)
         _output.WriteLine("Step 4: Creating project...");
         var instantiateResult = await TemplateInstantiateTool.InstantiateTemplateAsync(
-            _service, "console", "E2EConsoleApp", outputPath);
+            _service, _postProcessor, "console", "E2EConsoleApp", outputPath);
 
         _output.WriteLine($"  Instantiate response: {instantiateResult}");
         var instantiateParsed = JsonSerializer.Deserialize<JsonElement>(instantiateResult);
@@ -131,7 +134,7 @@ public class EndToEndTests : IDisposable
 
         // Instantiate with UseControllers=true — smart defaults should set UseMinimalAPIs=false
         var result = await TemplateInstantiateTool.InstantiateTemplateAsync(
-            _service, "webapi", "E2EWebApi", outputPath,
+            _service, _postProcessor, "webapi", "E2EWebApi", outputPath,
             "{\"UseControllers\": \"true\"}");
 
         var parsed = JsonSerializer.Deserialize<JsonElement>(result);
