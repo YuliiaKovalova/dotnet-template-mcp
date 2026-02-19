@@ -92,6 +92,13 @@ internal static class McpTelemetry
             unit: "{templates}",
             description: "Number of templates generated from existing project analysis");
 
+    /// <summary>Template composition operations via template_compose.</summary>
+    public static readonly Counter<long> TemplateCompositions =
+        Meter.CreateCounter<long>(
+            "mcp.templates.compositions",
+            unit: "{compositions}",
+            description: "Number of multi-template composition operations");
+
     // ── Histograms ──
 
     /// <summary>Duration of MCP tool invocations in milliseconds.</summary>

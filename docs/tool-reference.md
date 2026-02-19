@@ -118,6 +118,44 @@ Returns: project analysis (SDK, properties, packages with metadata, CPM detectio
 
 ---
 
+## `template_compose`
+
+Execute a sequence of template operations (project + item templates) in order. For example, create a MAUI app then add specific pages/views. If a template is not installed, it will be auto-resolved from NuGet.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `stepsJson` | string | Yes | JSON array of steps |
+
+Each step object:
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `templateName` | string | Yes | Template identity or short name |
+| `name` | string | No | Project/item name |
+| `outputPath` | string | No | Output directory |
+| `target` | string | No | Relative path within first step's output |
+| `parametersJson` | string | No | JSON object of parameter values |
+
+Example:
+```json
+[
+  {"templateName": "console", "name": "MyApp"},
+  {"templateName": "gitignore", "target": "."}
+]
+```
+
+---
+
+## `template_suggest_parameters`
+
+Given a template and partial parameter values, suggest reasonable defaults with rationale. Example: `EnableAot=true` → suggests `Framework=net9.0` with explanation.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `templateName` | string | Yes | Template identity or short name |
+| `parametersJson` | string | No | JSON object of parameters already chosen |
+
+---
+
 ## MCP Prompts
 
 ### `create_project`
