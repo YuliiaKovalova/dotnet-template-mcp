@@ -116,6 +116,7 @@ Chain multiple templates in one call with `template_compose`:
 | [Tool Reference](docs/tool-reference.md) | Every tool's parameters, types, and examples |
 | [Architecture](docs/architecture.md) | Template cache, smart behaviors, telemetry, project structure |
 | [MCP vs Skills](docs/mcp-vs-skills.md) | Why MCP over Copilot Skills — benefits and downsides |
+| [Plain LLM vs MCP](docs/plain-llm-vs-mcp.md) | Side-by-side: what a plain LLM does vs. the MCP tool (4 scenarios) |
 | [Skills Equivalent](docs/skills-equivalent.md) | What it'd take to cover this with Skills instead |
 
 ## Building & Testing
