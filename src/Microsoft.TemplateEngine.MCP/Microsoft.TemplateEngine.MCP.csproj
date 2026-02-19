@@ -10,7 +10,7 @@
     <PackageId>DotnetTemplateMCP</PackageId>
     <ToolCommandName>template-engine-mcp</ToolCommandName>
     <IsPackable>true</IsPackable>
-    <Version>0.1.0-preview.2</Version>
+    <Version>0.1.0-preview.3</Version>
     <Authors>YuliiaKovalova</Authors>
     <PackageProjectUrl>https://github.com/YuliiaKovalova/dotnet-template-mcp</PackageProjectUrl>
     <RepositoryUrl>https://github.com/YuliiaKovalova/dotnet-template-mcp</RepositoryUrl>

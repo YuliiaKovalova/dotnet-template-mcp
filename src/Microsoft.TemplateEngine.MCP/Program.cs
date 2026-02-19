@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.TemplateEngine.MCP.Host;
+using Microsoft.TemplateEngine.MCP.PostCreation;
 
 namespace Microsoft.TemplateEngine.MCP;
 
@@ -19,6 +20,7 @@ internal sealed class Program
         builder.Services.AddSingleton(featureFlags);
         builder.Services.AddSingleton<TemplateEngineService>();
         builder.Services.AddSingleton<TemplateEngineFacade>();
+        builder.Services.AddSingleton<PostCreationProcessor>();
         builder.Services
             .AddMcpServer(options =>
             {
