@@ -99,6 +99,13 @@ internal static class McpTelemetry
             unit: "{compositions}",
             description: "Number of multi-template composition operations");
 
+    /// <summary>Parameters collected via elicitation.</summary>
+    public static readonly Counter<long> ElicitedParameters =
+        Meter.CreateCounter<long>(
+            "mcp.templates.elicited_parameters",
+            unit: "{parameters}",
+            description: "Number of parameters collected via interactive elicitation");
+
     // ── Histograms ──
 
     /// <summary>Duration of MCP tool invocations in milliseconds.</summary>

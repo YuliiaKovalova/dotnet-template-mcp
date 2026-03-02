@@ -72,4 +72,116 @@ public class FeatureFlagsTests
     {
         Assert.Equal("MCP_TEMPLATE_INTENT_RESOLUTION", McpFeatureFlags.IntentResolutionEnvVar);
     }
+
+    [Fact]
+    public void DefaultTransport_IsStdio()
+    {
+        var original = Environment.GetEnvironmentVariable(McpFeatureFlags.TransportEnvVar);
+        try
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.TransportEnvVar, null);
+            var flags = McpFeatureFlags.FromEnvironment([]);
+            Assert.Equal(TransportMode.Stdio, flags.Transport);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.TransportEnvVar, original);
+        }
+    }
+
+    [Fact]
+    public void Transport_Http_ViaEnvironmentVariable()
+    {
+        var original = Environment.GetEnvironmentVariable(McpFeatureFlags.TransportEnvVar);
+        try
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.TransportEnvVar, "http");
+            var flags = McpFeatureFlags.FromEnvironment([]);
+            Assert.Equal(TransportMode.Http, flags.Transport);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.TransportEnvVar, original);
+        }
+    }
+
+    [Fact]
+    public void Transport_Http_ViaCommandLineArg()
+    {
+        var original = Environment.GetEnvironmentVariable(McpFeatureFlags.TransportEnvVar);
+        try
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.TransportEnvVar, null);
+            var flags = McpFeatureFlags.FromEnvironment(["--transport", "http"]);
+            Assert.Equal(TransportMode.Http, flags.Transport);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.TransportEnvVar, original);
+        }
+    }
+
+    [Fact]
+    public void Elicitation_EnabledByDefault()
+    {
+        var original = Environment.GetEnvironmentVariable(McpFeatureFlags.ElicitationEnvVar);
+        try
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.ElicitationEnvVar, null);
+            var flags = McpFeatureFlags.FromEnvironment();
+            Assert.True(flags.ElicitationEnabled);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.ElicitationEnvVar, original);
+        }
+    }
+
+    [Fact]
+    public void Elicitation_DisabledWhenSetToFalse()
+    {
+        var original = Environment.GetEnvironmentVariable(McpFeatureFlags.ElicitationEnvVar);
+        try
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.ElicitationEnvVar, "false");
+            var flags = McpFeatureFlags.FromEnvironment();
+            Assert.False(flags.ElicitationEnabled);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.ElicitationEnvVar, original);
+        }
+    }
+
+    [Fact]
+    public void HttpUrl_DefaultValue()
+    {
+        var original = Environment.GetEnvironmentVariable(McpFeatureFlags.HttpUrlEnvVar);
+        try
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.HttpUrlEnvVar, null);
+            var flags = McpFeatureFlags.FromEnvironment();
+            Assert.Equal("http://localhost:5005", flags.HttpUrl);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.HttpUrlEnvVar, original);
+        }
+    }
+
+    [Fact]
+    public void HttpUrl_FromEnvironmentVariable()
+    {
+        var original = Environment.GetEnvironmentVariable(McpFeatureFlags.HttpUrlEnvVar);
+        try
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.HttpUrlEnvVar, "http://0.0.0.0:8080");
+            var flags = McpFeatureFlags.FromEnvironment();
+            Assert.Equal("http://0.0.0.0:8080", flags.HttpUrl);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(McpFeatureFlags.HttpUrlEnvVar, original);
+        }
+    }
 }

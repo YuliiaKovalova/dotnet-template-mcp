@@ -4,6 +4,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.TemplateEngine.MCP.Host;
 using Microsoft.TemplateEngine.MCP.PostCreation;
 using ModelContextProtocol.Server;
 using ITemplateCreationResult = Microsoft.TemplateEngine.Edge.Template.ITemplateCreationResult;
@@ -18,6 +19,8 @@ internal sealed class TemplateInstantiateTool
     public static async Task<string> InstantiateTemplateAsync(
         TemplateEngineService engineService,
         PostCreationProcessor postProcessor,
+        McpFeatureFlags featureFlags,
+        McpServer server,
         [Description("Template identity or short name")] string templateName,
         [Description("Name for the created project/item")] string? name = null,
         [Description("Output directory path where files will be created")] string? outputPath = null,
@@ -51,7 +54,24 @@ internal sealed class TemplateInstantiateTool
 
         var parameters = ParseParameters(parametersJson);
 
-        // 3. Apply smart defaults based on cross-parameter relationships
+        // 3. Elicit missing required parameters interactively (if supported)
+        if (featureFlags.ElicitationEnabled && ElicitationHelper.IsElicitationSupported(server))
+        {
+            var elicited = await ElicitationHelper.ElicitMissingParametersAsync(
+                server, template, parameters, cancellationToken).ConfigureAwait(false);
+
+            if (elicited is not null)
+            {
+                foreach (var (key, value) in elicited)
+                {
+                    parameters[key] = value;
+                }
+
+                McpTelemetry.ElicitedParameters.Add(elicited.Count);
+            }
+        }
+
+        // 4. Apply smart defaults based on cross-parameter relationships
         var smartDefaults = TemplateEngineService.SuggestSmartDefaults(template, parameters);
         foreach (var (key, value) in smartDefaults)
         {
@@ -66,7 +86,7 @@ internal sealed class TemplateInstantiateTool
             McpTelemetry.SmartDefaultsApplied.Add(smartDefaults.Count);
         }
 
-        // 4. Validate parameters before creation
+        // 5. Validate parameters before creation
         var validationErrors = TemplateEngineService.ValidateParameters(template, parameters);
         if (validationErrors.Count > 0)
         {
@@ -80,10 +100,10 @@ internal sealed class TemplateInstantiateTool
             }, new JsonSerializerOptions { WriteIndented = true });
         }
 
-        // 5. Check constraints
+        // 6. Check constraints
         var constraintWarnings = TemplateEngineService.CheckConstraints(template);
 
-        // 6. Instantiate
+        // 7. Instantiate
         string resolvedOutputPath = outputPath ?? Path.Combine(Environment.CurrentDirectory, name ?? template.DefaultName ?? "NewProject");
 
         var result = await engineService.CreateAsync(template, name, resolvedOutputPath, parameters, cancellationToken).ConfigureAwait(false);
@@ -91,7 +111,7 @@ internal sealed class TemplateInstantiateTool
         McpTelemetry.TemplatesCreated.Add(1);
         activity?.SetTag("mcp.template.identity", template.Identity);
 
-        // 7. Post-creation processing: CPM adaptation + NuGet version upgrades
+        // 8. Post-creation processing: CPM adaptation + NuGet version upgrades
         PostCreationResult? postCreationResult = null;
         if (result.Status == Microsoft.TemplateEngine.Edge.Template.CreationResultStatus.Success)
         {
