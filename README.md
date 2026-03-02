@@ -18,7 +18,7 @@ Your AI agent just says: *"I need a web API with authentication and controllers"
 | `template_search` | Search locally **and** on NuGet.org — one call, ranked results |
 | `template_list` | List what's installed, filter by language/type/classification |
 | `template_inspect` | Parameters, constraints, post-actions — all in one shot |
-| `template_instantiate` | Create a project. Not installed? Auto-resolves from NuGet in one call |
+| `template_instantiate` | Create a project. Not installed? Auto-resolves from NuGet. Elicits missing params interactively |
 | `template_dry_run` | Preview files without touching disk |
 | `template_install` | Install a package (idempotent — skips if already there) |
 | `template_uninstall` | Remove a template package |
@@ -62,6 +62,61 @@ Add to `mcp.json`:
 
 📖 [Claude Desktop, Cursor, and more →](docs/configuration.md)
 
+## Transport Modes
+
+### Stdio (default)
+
+Standard I/O transport for local CLI and tool usage:
+
+```bash
+template-engine-mcp                     # stdio is the default
+template-engine-mcp --transport stdio   # explicit
+```
+
+### HTTP (remote / cloud / team-shared)
+
+Streamable HTTP transport for remote, multi-tenant, or CI/CD deployment:
+
+```bash
+template-engine-mcp --transport http
+# or via environment variable:
+MCP_TEMPLATE_TRANSPORT=http template-engine-mcp
+```
+
+The HTTP server exposes:
+- **`/mcp`** — MCP streamable HTTP endpoint
+- **`/health`** — Health check endpoint
+
+Configure the listen URL:
+```bash
+MCP_TEMPLATE_HTTP_URL=http://0.0.0.0:8080 template-engine-mcp --transport http
+```
+
+Connect your MCP client:
+```json
+{
+  "servers": {
+    "dotnet-templates": {
+      "type": "http",
+      "url": "http://localhost:5005/mcp"
+    }
+  }
+}
+```
+
+### Interactive Elicitation
+
+When a template has required parameters that weren't provided, the server **asks the user interactively** via MCP elicitation — instead of failing. Template parameter types are mapped to form fields:
+
+| Template Parameter | Elicitation Field |
+|---|---|
+| `string` | Text input |
+| `bool` / `boolean` | Checkbox |
+| `int` / `number` | Number input |
+| Choice parameter | Single-select dropdown |
+
+Disable with `MCP_TEMPLATE_ELICITATION=false`.
+
 ## How it works
 
 ```
@@ -73,7 +128,7 @@ You: "I need a web API with authentication, controllers, and Docker support"
 → template_instantiate creates the project
 ```
 
-The server also does **smart defaults** (AOT → latest framework, auth → HTTPS stays on), **parameter validation** before writing files, **constraint checking** (OS, SDK, workload), and **auto-resolves** templates from NuGet if they're not installed.
+The server also does **smart defaults** (AOT → latest framework, auth → HTTPS stays on), **parameter validation** before writing files, **constraint checking** (OS, SDK, workload), **interactive elicitation** of missing required parameters, and **auto-resolves** templates from NuGet if they're not installed.
 
 ### CPM & Latest Package Versions
 
