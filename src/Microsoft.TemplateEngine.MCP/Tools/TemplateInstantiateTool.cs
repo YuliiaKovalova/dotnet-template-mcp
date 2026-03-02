@@ -45,7 +45,9 @@ internal sealed class TemplateInstantiateTool
             if (resolved == null)
             {
                 McpTelemetry.RecordError(activity, "template_instantiate", message ?? "auto-resolve failed");
-                return JsonSerializer.Serialize(new { error = message }, new JsonSerializerOptions { WriteIndented = true });
+                return McpErrorResponse.Serialize("template_not_found",
+                    message ?? $"Template '{templateName}' not found locally or on NuGet.",
+                    "Check the template name or try template_search to find available templates.");
             }
 
             template = resolved;
@@ -92,12 +94,11 @@ internal sealed class TemplateInstantiateTool
         {
             McpTelemetry.ValidationFailures.Add(1);
             McpTelemetry.RecordError(activity, "template_instantiate", "Parameter validation failed");
-            return JsonSerializer.Serialize(new
-            {
-                error = "Parameter validation failed. No files were written.",
-                validationErrors,
-                templateName = template.Identity,
-            }, new JsonSerializerOptions { WriteIndented = true });
+            return McpErrorResponse.Serialize("validation_failed",
+                "Parameter validation failed. No files were written.",
+                "Fix the parameter values and retry. Use template_inspect to see valid parameter options.",
+                retryable: true,
+                details: new { validationErrors, templateName = template.Identity });
         }
 
         // 6. Check constraints
