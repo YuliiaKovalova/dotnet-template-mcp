@@ -35,13 +35,13 @@ Your AI agent just says: *"I need a web API with authentication and controllers"
 ### Zero-install with `dnx` (.NET 10+)
 
 ```bash
-dnx -y DotnetTemplateMCP --version 0.1.0-preview.3
+dnx -y DotnetTemplateMCP --version 1.0.0
 ```
 
 ### Global tool
 
 ```bash
-dotnet tool install --global DotnetTemplateMCP --version 0.1.0-preview.3
+dotnet tool install --global DotnetTemplateMCP --version 1.0.0
 ```
 
 ### VS Code / GitHub Copilot
@@ -54,7 +54,7 @@ Add to `mcp.json`:
     "dotnet-templates": {
       "type": "stdio",
       "command": "dnx",
-      "args": ["-y", "DotnetTemplateMCP", "--version", "0.1.0-preview.3"]
+      "args": ["-y", "DotnetTemplateMCP", "--version", "1.0.0"]
     }
   }
 }
@@ -178,11 +178,31 @@ Chain multiple templates in one call with `template_compose`:
 
 ```bash
 dotnet build
-dotnet test    # 170 tests — unit, integration, and E2E
+dotnet test    # 185+ tests — unit, integration, and E2E
 ```
 
 CI runs on push/PR via [GitHub Actions](.github/workflows/ci.yml) (Ubuntu + Windows).
 
+## Contributing
+
+Contributions are welcome! Please open an issue to discuss proposed changes before submitting a PR.
+
+```bash
+# Setup
+dotnet restore
+dotnet build
+
+# Run tests
+dotnet test
+
+# Pack locally
+dotnet pack src/Microsoft.TemplateEngine.MCP -o nupkg/
+```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
+
 ## License
 
-MIT
+[MIT](LICENSE)
