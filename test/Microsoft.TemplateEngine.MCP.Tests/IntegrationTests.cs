@@ -156,7 +156,7 @@ public class IntegrationTests : IDisposable
     [Fact]
     public async Task TemplateList_ReturnsInstalledTemplates()
     {
-        var result = await TemplateListTool.ListTemplatesAsync(_service);
+        var result = await TemplateListTool.ListTemplatesAsync(_service, new McpFeatureFlags());
 
         var parsed = JsonSerializer.Deserialize<JsonElement>(result);
         Assert.Equal(JsonValueKind.Array, parsed.ValueKind);

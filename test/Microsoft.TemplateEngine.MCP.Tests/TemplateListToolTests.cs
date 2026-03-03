@@ -18,7 +18,7 @@ public class TemplateListToolTests
             CreateTemplate("console", "Console App", "Microsoft.Console", language: "C#", type: "project"),
             CreateTemplate("classlib", "Class Library", "Microsoft.ClassLib", language: "C#", type: "project"));
 
-        string result = await TemplateListTool.ListTemplatesAsync(engineService);
+        string result = await TemplateListTool.ListTemplatesAsync(engineService, new McpFeatureFlags());
 
         var items = JsonSerializer.Deserialize<JsonElement>(result);
         Assert.Equal(2, items.GetArrayLength());
@@ -31,7 +31,7 @@ public class TemplateListToolTests
             CreateTemplate("console", "Console App", "Microsoft.Console.CSharp", language: "C#"),
             CreateTemplate("console", "Console App F#", "Microsoft.Console.FSharp", language: "F#"));
 
-        string result = await TemplateListTool.ListTemplatesAsync(engineService, language: "C#");
+        string result = await TemplateListTool.ListTemplatesAsync(engineService, new McpFeatureFlags(), language: "C#");
 
         var items = JsonSerializer.Deserialize<JsonElement>(result);
         Assert.Equal(1, items.GetArrayLength());
@@ -45,7 +45,7 @@ public class TemplateListToolTests
             CreateTemplate("webapp", "Web App", "Microsoft.WebApp", classifications: new[] { "Web", "Cloud" }),
             CreateTemplate("console", "Console App", "Microsoft.Console", classifications: new[] { "Console" }));
 
-        string result = await TemplateListTool.ListTemplatesAsync(engineService, classification: "Web");
+        string result = await TemplateListTool.ListTemplatesAsync(engineService, new McpFeatureFlags(), classification: "Web");
 
         var items = JsonSerializer.Deserialize<JsonElement>(result);
         Assert.Equal(1, items.GetArrayLength());
