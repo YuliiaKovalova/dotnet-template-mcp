@@ -16,6 +16,7 @@ internal sealed class TemplateInstallTool
     [Description("Install a template package from NuGet or a local folder/nupkg path. Idempotent: skips if already installed at the same version, offers upgrade if older. Returns install status AND full metadata for all templates in the package.")]
     public static async Task<string> InstallTemplateAsync(
         TemplateEngineService engineService,
+        McpFeatureFlags featureFlags,
         [Description("NuGet package ID (e.g., 'Microsoft.DotNet.Web.ProjectTemplates.8.0') or local path to a folder or .nupkg file")] string packageId,
         [Description("Optional package version (e.g., '8.0.0'). If not specified, the latest version is used.")] string? version = null,
         CancellationToken cancellationToken = default)
@@ -24,6 +25,11 @@ internal sealed class TemplateInstallTool
         var sw = Stopwatch.StartNew();
         try
         {
+            if (!featureFlags.IsToolEnabled("template_install"))
+            {
+                return ToolProfileResponse.DisabledMessage("template_install", "Use template_instantiate which auto-installs missing templates.");
+            }
+
         // Check if already installed (idempotent)
         var existingPackages = await engineService.GetManagedTemplatePackagesAsync(cancellationToken).ConfigureAwait(false);
         var existingPackage = existingPackages.FirstOrDefault(p =>

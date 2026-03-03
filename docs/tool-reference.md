@@ -168,6 +168,27 @@ Example:
 
 ---
 
+## `template_validate`
+
+Validate a local template directory for authoring issues before publishing. Checks schema compliance, parameter definitions, constraints, post-actions, and common mistakes.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | Yes | Path to the template directory (containing `.template.config/template.json`), or direct path to `template.json` |
+
+**Validation checks:**
+- Required fields (`identity`, `name`, `shortName`)
+- Identity format and namespace conventions
+- Short name conflicts with dotnet CLI commands
+- Parameter issues: missing datatypes, empty choices, invalid defaults, prefix collisions
+- Computed/generated symbol completeness
+- Post-action and constraint configuration
+- Tag recommendations (language, type)
+
+Returns: `{ valid, errors, warnings, suggestions }`
+
+---
+
 ## `template_suggest_parameters`
 
 Given a template and partial parameter values, suggest reasonable defaults with rationale. Example: `EnableAot=true` → suggests `Framework=net9.0` with explanation.

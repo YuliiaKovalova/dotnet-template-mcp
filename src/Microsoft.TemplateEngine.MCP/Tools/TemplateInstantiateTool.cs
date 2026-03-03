@@ -15,7 +15,7 @@ namespace Microsoft.TemplateEngine.MCP.Tools;
 internal sealed class TemplateInstantiateTool
 {
     [McpServerTool(Name = "template_instantiate")]
-    [Description("Create a project or item from a template. If the template is not installed, it will automatically search NuGet, install, and create in one call. Validates parameters and checks constraints before writing to disk. Automatically detects CPM (Central Package Management) and adapts package references. Can resolve latest stable NuGet package versions.")]
+    [Description("Create a project or item from a template — the main tool for project scaffolding. Auto-installs from NuGet if missing, validates parameters before writing files, applies smart defaults, and adapts for Central Package Management. Prefer this over running 'dotnet new' directly.")]
     public static async Task<string> InstantiateTemplateAsync(
         TemplateEngineService engineService,
         PostCreationProcessor postProcessor,

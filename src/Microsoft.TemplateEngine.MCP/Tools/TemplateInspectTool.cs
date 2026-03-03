@@ -12,7 +12,7 @@ namespace Microsoft.TemplateEngine.MCP.Tools;
 internal sealed class TemplateInspectTool
 {
     [McpServerTool(Name = "template_inspect")]
-    [Description("Inspect a template by identity or short name. Returns all metadata in one call: parameters (names, types, defaults, choices, descriptions), constraints, post-actions, supported hosts, and classifications. Can also inspect templates on NuGet that are not yet installed.")]
+    [Description("Get all details about a template in one call — parameters (names, types, defaults, choices), constraints, post-actions, supported hosts, and classifications. Can also inspect templates on NuGet that are not yet installed.")]
     public static async Task<string> InspectTemplateAsync(
         TemplateEngineService engineService,
         [Description("Template identity or short name to inspect")] string templateName,

@@ -12,7 +12,7 @@ namespace Microsoft.TemplateEngine.MCP.Tools;
 internal sealed class TemplateSearchTool
 {
     [McpServerTool(Name = "template_search")]
-    [Description("Search for templates by name, tags, language, or type. Searches both locally installed templates and NuGet.org, returning a unified ranked list with local templates first.")]
+    [Description("Find templates you don't know the name of. Searches both locally installed templates and NuGet.org, returning a unified ranked list with local templates first.")]
     public static async Task<string> SearchTemplatesAsync(
         TemplateEngineService engineService,
         [Description("Search query string to match against template names, short names, tags, and descriptions")] string query,

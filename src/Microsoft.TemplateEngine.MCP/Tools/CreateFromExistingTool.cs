@@ -20,6 +20,7 @@ internal sealed class CreateFromExistingTool
         "and content items. Solves the problem of 'dotnet new' creating generic projects that don't match repo conventions.")]
     public static async Task<string> CreateFromExistingAsync(
         TemplateEngineService engineService,
+        McpFeatureFlags featureFlags,
         [Description("Full path to the .csproj file to analyze and use as a template source")] string projectPath,
         [Description("Human-readable name for the generated template (e.g., 'Repo Unit Test Project')")] string templateName,
         [Description("Short name for the template (e.g., 'repo-unittest'). Used with 'dotnet new <shortname>'.")] string? shortName = null,
@@ -28,9 +29,15 @@ internal sealed class CreateFromExistingTool
         CancellationToken cancellationToken = default)
     {
         using var activity = McpTelemetry.StartToolActivity("template_create_from_existing");
+
         var sw = Stopwatch.StartNew();
         try
         {
+            if (!featureFlags.IsToolEnabled("template_create_from_existing"))
+            {
+                return ToolProfileResponse.DisabledMessage("template_create_from_existing", "Set MCP_TEMPLATE_TOOL_PROFILE=full to generate templates from existing projects.");
+            }
+
             // 1. Analyze the project
             ProjectAnalysis analysis;
             try

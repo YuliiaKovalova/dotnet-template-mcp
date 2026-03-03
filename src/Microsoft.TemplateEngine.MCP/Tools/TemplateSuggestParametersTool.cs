@@ -16,6 +16,7 @@ internal sealed class TemplateSuggestParametersTool
     [Description("Given a template and partial parameter values, suggest reasonable defaults based on cross-parameter relationships. Returns suggestions with rationale explaining why each value is recommended. Example: EnableAot=true → suggests Framework=net9.0 because 'NativeAOT works best with the latest framework'.")]
     public static async Task<string> SuggestParametersAsync(
         TemplateEngineService engineService,
+        McpFeatureFlags featureFlags,
         [Description("Template identity or short name")] string templateName,
         [Description("JSON object of parameter name-value pairs already chosen (e.g., {\"EnableAot\": \"true\"})")] string? parametersJson = null,
         CancellationToken cancellationToken = default)
@@ -24,6 +25,11 @@ internal sealed class TemplateSuggestParametersTool
         var sw = Stopwatch.StartNew();
         try
         {
+            if (!featureFlags.IsToolEnabled("template_suggest_parameters"))
+            {
+                return ToolProfileResponse.DisabledMessage("template_suggest_parameters", "Use template_inspect to see parameter details, or template_instantiate which applies smart defaults automatically.");
+            }
+
             var template = await engineService.FindTemplateAsync(templateName, cancellationToken).ConfigureAwait(false);
             if (template == null)
             {

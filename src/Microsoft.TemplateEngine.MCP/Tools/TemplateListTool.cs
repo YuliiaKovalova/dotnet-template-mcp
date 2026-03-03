@@ -15,6 +15,7 @@ internal sealed class TemplateListTool
     [Description("List all installed templates with optional filtering by language, type, or classification.")]
     public static async Task<string> ListTemplatesAsync(
         TemplateEngineService engineService,
+        McpFeatureFlags featureFlags,
         [Description("Optional language filter (e.g., 'C#', 'F#', 'VB')")] string? language = null,
         [Description("Optional type filter (e.g., 'project', 'item')")] string? type = null,
         [Description("Optional classification filter (e.g., 'Web', 'Console', 'Library')")] string? classification = null,
@@ -24,6 +25,11 @@ internal sealed class TemplateListTool
         var sw = Stopwatch.StartNew();
         try
         {
+            if (!featureFlags.IsToolEnabled("template_list"))
+            {
+                return ToolProfileResponse.DisabledMessage("template_list", "Use template_search instead, which covers both local and NuGet templates.");
+            }
+
         var templates = await engineService.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
 
         IEnumerable<Abstractions.ITemplateInfo> filtered = templates;

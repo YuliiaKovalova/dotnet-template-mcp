@@ -15,6 +15,7 @@ internal sealed class SolutionAnalyzeTool
     [McpServerTool(Name = "solution_analyze")]
     [Description("Analyze a solution or workspace directory. Returns project structure, target frameworks, CPM status, and NuGet configuration — essential context for template creation decisions.")]
     public static async Task<string> AnalyzeSolutionAsync(
+        McpFeatureFlags featureFlags,
         [Description("Path to a .sln/.slnx file or a directory to scan. Defaults to current directory.")] string? path = null,
         CancellationToken cancellationToken = default)
     {
@@ -22,6 +23,11 @@ internal sealed class SolutionAnalyzeTool
         var sw = Stopwatch.StartNew();
         try
         {
+            if (!featureFlags.IsToolEnabled("solution_analyze"))
+            {
+                return ToolProfileResponse.DisabledMessage("solution_analyze", "Set MCP_TEMPLATE_TOOL_PROFILE=full to analyze solution structure.");
+            }
+
             string resolvedPath = path ?? Environment.CurrentDirectory;
 
             // Find .sln file
