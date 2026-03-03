@@ -1,5 +1,7 @@
 # Microsoft.TemplateEngine.MCP
 
+<!-- mcp-name: io.github.YuliiaKovalova/dotnet-template-mcp -->
+
 An MCP server that lets AI agents work with `dotnet new` templates — search, inspect, preview, and create projects through natural conversation instead of memorizing CLI flags.
 
 Instead of this:
@@ -27,6 +29,8 @@ Your AI agent just says: *"I need a web API with authentication and controllers"
 | `template_create_from_existing` | Analyze a .csproj → generate a reusable template matching repo conventions |
 | `template_compose` | Execute a sequence of templates (project + items) in one workflow |
 | `template_suggest_parameters` | Suggest parameter values with rationale based on cross-parameter relationships |
+| `template_validate` | Validate a local template directory for authoring issues before publishing |
+| `solution_analyze` | Analyze a solution/workspace — project structure, frameworks, CPM status |
 
 📖 [Full tool reference →](docs/tool-reference.md)
 
@@ -35,13 +39,13 @@ Your AI agent just says: *"I need a web API with authentication and controllers"
 ### Zero-install with `dnx` (.NET 10+)
 
 ```bash
-dnx -y DotnetTemplateMCP --version 1.0.0
+dnx -y DotnetTemplateMCP --version 1.1.0
 ```
 
 ### Global tool
 
 ```bash
-dotnet tool install --global DotnetTemplateMCP --version 1.0.0
+dotnet tool install --global DotnetTemplateMCP --version 1.1.0
 ```
 
 ### VS Code / GitHub Copilot
@@ -54,7 +58,7 @@ Add to `mcp.json`:
     "dotnet-templates": {
       "type": "stdio",
       "command": "dnx",
-      "args": ["-y", "DotnetTemplateMCP", "--version", "1.0.0"]
+      "args": ["-y", "DotnetTemplateMCP", "--version", "1.1.0"]
     }
   }
 }
@@ -162,6 +166,32 @@ Chain multiple templates in one call with `template_compose`:
 ```
 
 📖 [Architecture & smart behaviors →](docs/architecture.md)
+
+### Tool Profiles (Lite vs Full)
+
+By default, all 13 tools are available. If your agent works better with fewer tools, set the `MCP_TEMPLATE_TOOL_PROFILE` environment variable:
+
+| Profile | Tools | When to use |
+|---------|-------|-------------|
+| `full` (default) | All 13 tools | Full control — advanced workflows, composition, custom templates |
+| `lite` | 5 core tools | Simpler agents that just need to find and create projects |
+
+**Lite profile tools:** `template_from_intent`, `template_instantiate`, `template_inspect`, `template_search`, `template_dry_run`
+
+```json
+{
+  "servers": {
+    "dotnet-template-mcp": {
+      "command": "dotnet-template-mcp",
+      "env": {
+        "MCP_TEMPLATE_TOOL_PROFILE": "lite"
+      }
+    }
+  }
+}
+```
+
+Non-lite tools will return a helpful message explaining they're disabled and how to enable them.
 
 ## Documentation
 

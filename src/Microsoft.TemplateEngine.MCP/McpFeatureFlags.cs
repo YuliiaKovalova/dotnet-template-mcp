@@ -34,6 +34,13 @@ internal sealed class McpFeatureFlags
     public const string ElicitationEnvVar = "MCP_TEMPLATE_ELICITATION";
 
     /// <summary>
+    /// Environment variable to select the tool profile.
+    /// Values: "full" (default, all 13 tools), "lite" (5 core tools only).
+    /// Lite mode reduces tool count to minimize agent confusion and context overhead.
+    /// </summary>
+    public const string ToolProfileEnvVar = "MCP_TEMPLATE_TOOL_PROFILE";
+
+    /// <summary>
     /// Whether intent resolution tools (template_from_intent, create_from_description) are enabled.
     /// </summary>
     public bool IntentResolutionEnabled { get; init; } = true;
@@ -54,6 +61,16 @@ internal sealed class McpFeatureFlags
     public bool ElicitationEnabled { get; init; } = true;
 
     /// <summary>
+    /// The active tool profile. Controls which tools are exposed to the MCP client.
+    /// </summary>
+    public ToolProfile Profile { get; init; } = ToolProfile.Full;
+
+    /// <summary>
+    /// Returns true if the given tool is enabled in the current profile.
+    /// </summary>
+    public bool IsToolEnabled(string toolName) => Profile == ToolProfile.Full || IsLiteProfileTool(toolName);
+
+    /// <summary>
     /// Load feature flags from environment variables and command-line arguments.
     /// </summary>
     public static McpFeatureFlags FromEnvironment(string[] args)
@@ -64,6 +81,7 @@ internal sealed class McpFeatureFlags
             Transport = GetTransportMode(args),
             HttpUrl = Environment.GetEnvironmentVariable(HttpUrlEnvVar) ?? "http://localhost:5005",
             ElicitationEnabled = IsEnabled(ElicitationEnvVar, defaultValue: true),
+            Profile = GetToolProfile(),
         };
     }
 
@@ -73,6 +91,28 @@ internal sealed class McpFeatureFlags
     public static McpFeatureFlags FromEnvironment()
     {
         return FromEnvironment([]);
+    }
+
+    /// <summary>
+    /// Lite profile tools: the 5 most essential tools for typical AI agent workflows.
+    /// </summary>
+    private static bool IsLiteProfileTool(string toolName)
+        => toolName is "template_from_intent"
+            or "template_instantiate"
+            or "template_inspect"
+            or "template_search"
+            or "template_dry_run";
+
+    private static ToolProfile GetToolProfile()
+    {
+        var value = Environment.GetEnvironmentVariable(ToolProfileEnvVar);
+        if (!string.IsNullOrEmpty(value) &&
+            value.Equals("lite", StringComparison.OrdinalIgnoreCase))
+        {
+            return ToolProfile.Lite;
+        }
+
+        return ToolProfile.Full;
     }
 
     private static TransportMode GetTransportMode(string[] args)
@@ -124,4 +164,16 @@ internal enum TransportMode
 
     /// <summary>HTTP transport with streamable HTTP support (for remote, cloud, and multi-tenant deployment).</summary>
     Http,
+}
+
+/// <summary>
+/// Tool profile modes controlling which tools are exposed to the MCP client.
+/// </summary>
+internal enum ToolProfile
+{
+    /// <summary>All 13 tools exposed (default).</summary>
+    Full,
+
+    /// <summary>5 core tools only: template_from_intent, template_instantiate, template_inspect, template_search, template_dry_run.</summary>
+    Lite,
 }

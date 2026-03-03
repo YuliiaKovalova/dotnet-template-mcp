@@ -12,7 +12,7 @@ namespace Microsoft.TemplateEngine.MCP.Tools;
 internal sealed class TemplateDryRunTool
 {
     [McpServerTool(Name = "template_dry_run")]
-    [Description("Preview what files and actions would be created by a template without writing anything to disk. Supports auto-resolve from NuGet, parameter validation, and constraint checking.")]
+    [Description("See exactly what files a template would create before committing. Supports auto-resolve from NuGet, parameter validation, and constraint checking.")]
     public static async Task<string> DryRunTemplateAsync(
         TemplateEngineService engineService,
         [Description("Template identity or short name")] string templateName,

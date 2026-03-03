@@ -13,7 +13,7 @@ namespace Microsoft.TemplateEngine.MCP.Tools;
 internal sealed class TemplateFromIntentTool
 {
     [McpServerTool(Name = "template_from_intent")]
-    [Description("Resolve a natural-language project description to ranked template matches with pre-filled parameters. No LLM required — uses keyword matching against template classifications, tags, and parameter definitions. Example: 'web API with authentication and controllers' → webapi + auth=Individual + UseControllers=true.")]
+    [Description("Skip the CLI flags — describe what you want in plain English and get the right template with pre-filled parameters. No LLM required — uses keyword matching. Example: 'web API with authentication and controllers' → webapi + auth=Individual + UseControllers=true.")]
     public static async Task<string> ResolveIntentAsync(
         TemplateEngineService engineService,
         McpFeatureFlags featureFlags,

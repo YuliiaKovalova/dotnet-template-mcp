@@ -19,12 +19,18 @@ internal sealed class TemplateInstalledResourceTool
     [Description("Get a structured listing of all installed templates as a resource. Returns identity, short names, name, description, author, classifications, language, and type for each template.")]
     public static async Task<string> GetInstalledTemplatesResourceAsync(
         TemplateEngineService engineService,
+        McpFeatureFlags featureFlags,
         CancellationToken cancellationToken = default)
     {
         using var activity = McpTelemetry.StartToolActivity("templates_installed");
         var sw = Stopwatch.StartNew();
         try
         {
+            if (!featureFlags.IsToolEnabled("templates_installed"))
+            {
+                return ToolProfileResponse.DisabledMessage("templates_installed", "Use template_search to find templates by name.");
+            }
+
         var templates = await engineService.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
 
         var result = templates.Select(t => new

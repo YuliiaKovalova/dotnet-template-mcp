@@ -15,6 +15,7 @@ internal sealed class TemplateUninstallTool
     [Description("Uninstall a template package. After uninstallation, templates from the package are no longer available.")]
     public static async Task<string> UninstallTemplateAsync(
         TemplateEngineService engineService,
+        McpFeatureFlags featureFlags,
         [Description("Package identifier to uninstall (e.g., 'Microsoft.DotNet.Web.ProjectTemplates.8.0')")] string packageId,
         CancellationToken cancellationToken = default)
     {
@@ -22,6 +23,11 @@ internal sealed class TemplateUninstallTool
         var sw = Stopwatch.StartNew();
         try
         {
+            if (!featureFlags.IsToolEnabled("template_uninstall"))
+            {
+                return ToolProfileResponse.DisabledMessage("template_uninstall", "Set MCP_TEMPLATE_TOOL_PROFILE=full to manage template packages.");
+            }
+
         var managedPackages = await engineService.GetManagedTemplatePackagesAsync(cancellationToken).ConfigureAwait(false);
 
         var packageToUninstall = managedPackages.FirstOrDefault(p =>

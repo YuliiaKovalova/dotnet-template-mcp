@@ -47,7 +47,7 @@ public class CreateFromExistingToolTests : IDisposable
             """);
 
         var result = await CreateFromExistingTool.CreateFromExistingAsync(
-            _engineService, path, "Test Template", "test-tmpl", _tempDir);
+            _engineService, new McpFeatureFlags(), path, "Test Template", "test-tmpl", _tempDir);
 
         var json = JsonDocument.Parse(result);
         var root = json.RootElement;
@@ -74,7 +74,7 @@ public class CreateFromExistingToolTests : IDisposable
             """);
 
         var result = await CreateFromExistingTool.CreateFromExistingAsync(
-            _engineService, path, "MSTest Template", "mstest-tmpl", _tempDir);
+            _engineService, new McpFeatureFlags(), path, "MSTest Template", "mstest-tmpl", _tempDir);
 
         var json = JsonDocument.Parse(result);
         var gaps = json.RootElement.GetProperty("gapsAddressed");
@@ -101,7 +101,7 @@ public class CreateFromExistingToolTests : IDisposable
             """);
 
         var result = await CreateFromExistingTool.CreateFromExistingAsync(
-            _engineService, path, "CPM Template", "cpm-tmpl", _tempDir);
+            _engineService, new McpFeatureFlags(), path, "CPM Template", "cpm-tmpl", _tempDir);
 
         var json = JsonDocument.Parse(result);
         var gaps = json.RootElement.GetProperty("gapsAddressed");
@@ -126,7 +126,7 @@ public class CreateFromExistingToolTests : IDisposable
             """);
 
         var result = await CreateFromExistingTool.CreateFromExistingAsync(
-            _engineService, path, "Analyzer Template", "analyzer-tmpl", _tempDir);
+            _engineService, new McpFeatureFlags(), path, "Analyzer Template", "analyzer-tmpl", _tempDir);
 
         var json = JsonDocument.Parse(result);
         var gaps = json.RootElement.GetProperty("gapsAddressed");
@@ -138,7 +138,7 @@ public class CreateFromExistingToolTests : IDisposable
     public async Task CreateFromExisting_FileNotFound_ReturnsError()
     {
         var result = await CreateFromExistingTool.CreateFromExistingAsync(
-            _engineService, Path.Combine(_tempDir, "nonexistent.csproj"), "Bad", "bad");
+            _engineService, new McpFeatureFlags(), Path.Combine(_tempDir, "nonexistent.csproj"), "Bad", "bad");
 
         var json = JsonDocument.Parse(result);
         Assert.True(json.RootElement.TryGetProperty("error", out _));
@@ -167,7 +167,7 @@ public class CreateFromExistingToolTests : IDisposable
             """);
 
         var result = await CreateFromExistingTool.CreateFromExistingAsync(
-            _engineService, path, "Full Template", "full-tmpl", _tempDir);
+            _engineService, new McpFeatureFlags(), path, "Full Template", "full-tmpl", _tempDir);
 
         var json = JsonDocument.Parse(result);
         var gaps = json.RootElement.GetProperty("gapsAddressed").EnumerateArray().ToList();
@@ -194,7 +194,7 @@ public class CreateFromExistingToolTests : IDisposable
             """);
 
         var result = await CreateFromExistingTool.CreateFromExistingAsync(
-            _engineService, path, "Simple Template", "simple-tmpl", _tempDir);
+            _engineService, new McpFeatureFlags(), path, "Simple Template", "simple-tmpl", _tempDir);
 
         var json = JsonDocument.Parse(result);
         var nextSteps = json.RootElement.GetProperty("nextSteps");

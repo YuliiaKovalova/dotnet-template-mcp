@@ -30,7 +30,7 @@ public class TemplateInstallToolTests
             .Returns(new[] { template });
 
         var result = await TemplateInstallTool.InstallTemplateAsync(
-            engineService, "MyPackage", "1.0.0");
+            engineService, new McpFeatureFlags(), "MyPackage", "1.0.0");
 
         var parsed = JsonSerializer.Deserialize<JsonElement>(result);
         Assert.True(parsed.GetProperty("AlreadyInstalled").GetBoolean());
@@ -58,7 +58,7 @@ public class TemplateInstallToolTests
             .Returns(new[] { template });
 
         var result = await TemplateInstallTool.InstallTemplateAsync(
-            engineService, "MyPackage");
+            engineService, new McpFeatureFlags(), "MyPackage");
 
         var parsed = JsonSerializer.Deserialize<JsonElement>(result);
         Assert.True(parsed.GetProperty("AlreadyInstalled").GetBoolean());
@@ -83,7 +83,7 @@ public class TemplateInstallToolTests
             .Returns(new[] { template });
 
         var result = await TemplateInstallTool.InstallTemplateAsync(
-            engineService, "MyPackage", "2.0.0");
+            engineService, new McpFeatureFlags(), "MyPackage", "2.0.0");
 
         var parsed = JsonSerializer.Deserialize<JsonElement>(result);
         Assert.True(parsed.GetProperty("UpgradeAvailable").GetBoolean());
@@ -110,7 +110,7 @@ public class TemplateInstallToolTests
             .Returns(Array.Empty<InstallResult>());
 
         var result = await TemplateInstallTool.InstallTemplateAsync(
-            engineService, "NewPackage", "1.0.0");
+            engineService, new McpFeatureFlags(), "NewPackage", "1.0.0");
 
         // Verify that InstallTemplatePackagesAsync WAS called (not skipped)
         A.CallTo(() => engineService.InstallTemplatePackagesAsync(

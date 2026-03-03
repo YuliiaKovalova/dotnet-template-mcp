@@ -16,6 +16,7 @@ internal sealed class TemplateComposeTool
     [Description("Execute a sequence of template operations (project + item templates) in order. For example, create a MAUI app then add specific pages/views. Each step can reference a different template. If a template is not installed, it will be auto-resolved from NuGet.")]
     public static async Task<string> ComposeTemplatesAsync(
         TemplateEngineService engineService,
+        McpFeatureFlags featureFlags,
         [Description("JSON array of steps. Each step: {\"templateName\": \"...\", \"name\": \"...\", \"outputPath\": \"...\", \"target\": \"relative/path\", \"parametersJson\": \"{...}\"}. The first step creates the project; subsequent steps add items. If 'target' is set on later steps, it's resolved relative to the first step's output.")] string stepsJson,
         CancellationToken cancellationToken = default)
     {
@@ -23,6 +24,11 @@ internal sealed class TemplateComposeTool
         var sw = Stopwatch.StartNew();
         try
         {
+            if (!featureFlags.IsToolEnabled("template_compose"))
+            {
+                return ToolProfileResponse.DisabledMessage("template_compose", "Use template_instantiate to create one project at a time.");
+            }
+
             List<ComposeStep>? steps;
             try
             {
