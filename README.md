@@ -4,6 +4,10 @@
 
 An MCP server that lets AI agents work with `dotnet new` templates — search, inspect, preview, and create projects through natural conversation instead of memorizing CLI flags.
 
+<a href="https://glama.ai/mcp/servers/@YuliiaKovalova/dotnet-template-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@YuliiaKovalova/dotnet-template-mcp/badge" alt="DotnetTemplateMCP MCP server" />
+</a>
+
 Instead of this:
 ```bash
 dotnet new list --language C#
