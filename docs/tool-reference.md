@@ -170,7 +170,7 @@ Example:
 
 ## `template_validate`
 
-Validate a local template directory for authoring issues before publishing. Checks schema compliance, parameter definitions, constraints, post-actions, and common mistakes.
+Validate a local template directory for authoring issues before publishing. Catches mistakes that would otherwise only surface after `dotnet new install` or during project creation. **No existing tooling provides this level of template.json validation.**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -179,13 +179,35 @@ Validate a local template directory for authoring issues before publishing. Chec
 **Validation checks:**
 - Required fields (`identity`, `name`, `shortName`)
 - Identity format and namespace conventions
-- Short name conflicts with dotnet CLI commands
+- Short name conflicts with dotnet CLI commands (`build`, `run`, `test`, etc.)
 - Parameter issues: missing datatypes, empty choices, invalid defaults, prefix collisions
-- Computed/generated symbol completeness
+- Computed/generated symbol completeness (references to undefined symbols)
 - Post-action and constraint configuration
 - Tag recommendations (language, type)
 
-Returns: `{ valid, errors, warnings, suggestions }`
+**Example response:**
+```json
+{
+  "valid": false,
+  "templatePath": "/templates/.template.config/template.json",
+  "identity": "MyCompany.WebApi",
+  "summary": "2 error(s), 1 warning(s), 3 suggestion(s)",
+  "errors": [
+    "Missing required field 'shortName'.",
+    "Parameter 'Framework': default value 'net7.0' is not in the choices list. Valid: net8.0, net9.0, net10.0"
+  ],
+  "warnings": [
+    "Missing 'sourceName'. Without it, --name won't customize the generated project name."
+  ],
+  "suggestions": [
+    "Consider adding a 'description' field to help users understand what this template creates.",
+    "Consider adding 'language' tag (e.g., 'C#') for better discoverability.",
+    "Consider adding 'type' tag (e.g., 'project', 'item') for filtering."
+  ]
+}
+```
+
+**When to use:** Before running `dotnet new install` on a template you're building, or as part of a CI pipeline for template packages.
 
 ---
 

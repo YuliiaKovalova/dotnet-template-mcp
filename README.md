@@ -17,6 +17,36 @@ dotnet new webapi --auth Individual --use-controllers --name MyApi --output ./My
 
 Your AI agent just says: *"I need a web API with authentication and controllers"* — and the MCP server figures out the rest.
 
+## Template Validation for Authors
+
+Building a custom `dotnet new` template? `template_validate` catches mistakes **before** you publish — no more guessing if your `template.json` is correct:
+
+```
+Agent calls: template_validate("./my-template")
+
+← Returns:
+{
+  "valid": false,
+  "summary": "2 error(s), 1 warning(s), 3 suggestion(s)",
+  "errors": [
+    "Missing required field 'shortName'.",
+    "Parameter 'Framework': default value 'net7.0' is not in the choices list."
+  ],
+  "warnings": [
+    "Missing 'sourceName'. Without it, the generated project name won't be customizable via --name."
+  ],
+  "suggestions": [
+    "Consider adding a 'description' field to help users understand what this template creates.",
+    "Consider adding 'language' tag (e.g., 'C#') for better discoverability.",
+    "Consider adding 'type' tag (e.g., 'project', 'item') for filtering."
+  ]
+}
+```
+
+**What it catches:** missing required fields, invalid identity format, short name conflicts with CLI commands, parameter issues (missing defaults, empty choices, prefix collisions, type mismatches), broken computed symbols, constraint misconfiguration, and missing tags.
+
+No existing tooling does this — most template authors discover issues only after `dotnet new install` fails or produces wrong output.
+
 ## Tools
 
 | Tool | What it does |
@@ -40,16 +70,16 @@ Your AI agent just says: *"I need a web API with authentication and controllers"
 
 ## Quick Start
 
+### Global tool (.NET 8+)
+
+```bash
+dotnet tool install --global DotnetTemplateMCP --version 1.1.0
+```
+
 ### Zero-install with `dnx` (.NET 10+)
 
 ```bash
 dnx -y DotnetTemplateMCP --version 1.1.0
-```
-
-### Global tool
-
-```bash
-dotnet tool install --global DotnetTemplateMCP --version 1.1.0
 ```
 
 ### VS Code / GitHub Copilot

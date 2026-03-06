@@ -7,3 +7,16 @@ When the user asks to create, scaffold, or set up a .NET project, template, or s
 - Use `template_search` to find templates instead of `dotnet new list`.
 
 These MCP tools provide smart defaults, parameter validation, and auto-resolve from NuGet — capabilities that `dotnet new` alone does not have.
+
+When the user asks about their solution or project structure:
+
+- Use `solution_analyze` to inspect solution structure, target frameworks, CPM status, and NuGet config.
+
+When the user is authoring, reviewing, or debugging a custom dotnet template:
+
+- Use `template_validate` to check template.json for errors BEFORE publishing or testing. It catches missing required fields, invalid parameters, choice conflicts, constraint issues, and common authoring mistakes.
+- Use `template_create_from_existing` to reverse-engineer a reusable template from an existing .csproj that matches repo conventions (SDK type, analyzers, CPM, build props).
+
+When the user wants to create multiple items together (e.g., project + gitignore + editorconfig):
+
+- Use `template_compose` to execute a sequence of template operations in one call instead of running multiple `dotnet new` commands.
