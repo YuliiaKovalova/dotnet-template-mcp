@@ -97,7 +97,7 @@ internal sealed class Program
         options.ServerInfo = new()
         {
             Name = "Microsoft.TemplateEngine.MCP",
-            Version = "1.0.0"
+            Version = "1.2.0"
         };
     }
 }

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-03-06
+
+### Added
+- **Multi-target net8.0 and net10.0** — broadens adoption to .NET 8 LTS users. The tool package includes both framework builds; the correct one is selected at runtime. Template engine packages use `VersionOverride` (8.0.406 for net8.0, 10.0.103 for net10.0).
+- **NuGet version lookup cache** — `NuGetVersionResolver` now caches results in a `ConcurrentDictionary` with 30-minute TTL, eliminating redundant API calls for repeated package lookups within a session.
+- **GitHub Releases workflow** — push a `v*` tag to auto-create a GitHub Release with install instructions, auto-generated release notes, and `.nupkg` artifact attached.
+- **Dependabot configuration** — automated weekly dependency updates for NuGet packages and GitHub Actions.
+- **Enhanced Copilot instructions** — `.github/copilot-instructions.md` now routes `template_validate`, `template_create_from_existing`, `solution_analyze`, and `template_compose` to the appropriate MCP tools.
+- **`template_validate` as hero feature** — prominent section in README with example output; enriched tool-reference.md with full example response and usage guidance.
+
+### Fixed
+- **`McpFeatureFlags.IsEnabled()` case sensitivity** — replaced explicit 9-casing switch with `StringComparison.OrdinalIgnoreCase`, correctly handling all case variants of `false`, `no`, `off`.
+- **`Program.cs` ServerInfo version** — was hardcoded to `1.0.0`, now matches package version.
+
 ## [1.0.0] - 2026-03-02
 
 ### Added

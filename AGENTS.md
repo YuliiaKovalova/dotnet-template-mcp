@@ -11,7 +11,7 @@ dotnet build
 dotnet test
 ```
 
-- Targets **net10.0** (see `global.json` for SDK version).
+- Targets **net8.0** and **net10.0** (see `global.json` for SDK version).
 - Uses **Central Package Management** — all versions in `Directory.Packages.props`.
 - CI runs on **ubuntu-latest** and **windows-latest** (see `.github/workflows/ci.yml`).
 - When the MCP server is running locally (e.g., as a tool provider), `dotnet build` may fail with a file lock on `bin/Debug/net10.0/Microsoft.TemplateEngine.MCP.exe`. Use `-o <tempdir>` to build to an alternate output path.
