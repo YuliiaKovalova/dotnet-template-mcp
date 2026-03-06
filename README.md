@@ -73,13 +73,13 @@ No existing tooling does this — most template authors discover issues only aft
 ### Global tool (.NET 8+)
 
 ```bash
-dotnet tool install --global DotnetTemplateMCP --version 1.1.0
+dotnet tool install --global DotnetTemplateMCP --version 1.2.0
 ```
 
 ### Zero-install with `dnx` (.NET 10+)
 
 ```bash
-dnx -y DotnetTemplateMCP --version 1.1.0
+dnx -y DotnetTemplateMCP --version 1.2.0
 ```
 
 ### VS Code / GitHub Copilot
@@ -92,7 +92,7 @@ Add to `mcp.json`:
     "dotnet-templates": {
       "type": "stdio",
       "command": "dnx",
-      "args": ["-y", "DotnetTemplateMCP", "--version", "1.1.0"]
+      "args": ["-y", "DotnetTemplateMCP", "--version", "1.2.0"]
     }
   }
 }

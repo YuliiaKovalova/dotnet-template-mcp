@@ -146,11 +146,10 @@ internal sealed class McpFeatureFlags
             return defaultValue;
         }
 
-        return value switch
-        {
-            "0" or "false" or "False" or "FALSE" or "no" or "No" or "NO" or "off" or "Off" or "OFF" => false,
-            _ => true,
-        };
+        return !value.Equals("false", StringComparison.OrdinalIgnoreCase)
+            && !value.Equals("no", StringComparison.OrdinalIgnoreCase)
+            && !value.Equals("off", StringComparison.OrdinalIgnoreCase)
+            && value != "0";
     }
 }
 
