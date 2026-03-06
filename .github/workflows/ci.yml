@@ -37,7 +37,7 @@ jobs:
         run: dotnet pack --no-build --configuration Release --output ./artifacts
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nupkg
           path: ./artifacts/*.nupkg
@@ -73,7 +73,7 @@ jobs:
           MCP_TEMPLATE_INTENT_RESOLUTION: true
 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-${{ matrix.os }}
