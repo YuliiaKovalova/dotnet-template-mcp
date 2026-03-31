@@ -35,7 +35,7 @@ internal sealed class McpFeatureFlags
 
     /// <summary>
     /// Environment variable to select the tool profile.
-    /// Values: "full" (default, all 13 tools), "lite" (5 core tools only).
+    /// Values: "full" (default, all 14 tools), "lite" (5 core tools only).
     /// Lite mode reduces tool count to minimize agent confusion and context overhead.
     /// </summary>
     public const string ToolProfileEnvVar = "MCP_TEMPLATE_TOOL_PROFILE";
@@ -170,7 +170,7 @@ internal enum TransportMode
 /// </summary>
 internal enum ToolProfile
 {
-    /// <summary>All 13 tools exposed (default).</summary>
+    /// <summary>All 14 tools exposed (default).</summary>
     Full,
 
     /// <summary>5 core tools only: template_from_intent, template_instantiate, template_inspect, template_search, template_dry_run.</summary>

@@ -223,6 +223,18 @@ Validate a local template directory for authoring issues before publishing. Catc
 
 ---
 
+## `template_compare`
+
+Compare 2 or more templates side by side — parameters, auth support, AOT, framework options, and classifications. Useful when deciding between templates (e.g., `webapi` vs `webapp`, `blazorserver` vs `blazorwasm`).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `templateNames` | string | Yes | Comma-separated template identities or short names (e.g., `"webapi,webapp"`) |
+
+Returns for each template: identity, parameters with types/defaults/choices, feature support flags (auth, AOT, Docker, controllers, interactivity), available frameworks, and classifications.
+
+---
+
 ## `template_suggest_parameters`
 
 Given a template and partial parameter values, suggest reasonable defaults with rationale. Example: `EnableAot=true` → suggests `Framework=net9.0` with explanation.

@@ -76,6 +76,21 @@ internal static class IntentSynonymDictionary
             ["editorconfig"] = ["editorconfig"],
             ["nuget config"] = ["nugetconfig"],
             ["global json"] = ["globaljson"],
+
+            // Modern .NET scenarios
+            ["aspire"] = ["aspire-starter", "aspire"],
+            [".net aspire"] = ["aspire-starter", "aspire"],
+            ["azure functions"] = ["func"],
+            ["function app"] = ["func"],
+            ["serverless"] = ["func"],
+            ["orleans"] = ["orleans"],
+            ["winui"] = ["winui3", "winui"],
+            ["winui3"] = ["winui3"],
+            ["blazor web"] = ["blazor"],
+            ["blazor web app"] = ["blazor"],
+            ["razor component"] = ["razorcomponent"],
+            ["razor class library"] = ["razorclasslib"],
+            ["web component"] = ["razorcomponent"],
         };
 
     /// <summary>
@@ -128,6 +143,13 @@ internal static class IntentSynonymDictionary
             ["container"] = ("EnableDocker", "true"),
             ["openapi"] = ("UseOpenApi", "true"),
             ["swagger"] = ("UseOpenApi", "true"),
+
+            // Interactivity (Blazor)
+            ["server rendering"] = ("interactivity", "Server"),
+            ["server-side rendering"] = ("interactivity", "Server"),
+            ["webassembly rendering"] = ("interactivity", "WebAssembly"),
+            ["wasm rendering"] = ("interactivity", "WebAssembly"),
+            ["auto rendering"] = ("interactivity", "Auto"),
         };
 
     /// <summary>
@@ -147,6 +169,8 @@ internal static class IntentSynonymDictionary
             ["cloud"] = ["Cloud", "Azure", "AWS"],
             ["worker"] = ["Worker", "Background", "Service"],
             ["blazor"] = ["Web/Blazor"],
+            ["aspire"] = ["Aspire"],
+            ["function"] = ["Azure Functions", "Serverless"],
         };
 
     /// <summary>

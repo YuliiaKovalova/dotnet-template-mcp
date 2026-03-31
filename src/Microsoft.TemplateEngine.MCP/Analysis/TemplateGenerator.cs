@@ -387,9 +387,17 @@ internal static class TemplateGenerator
 
     private static string ToShortName(string templateName)
     {
-        return templateName
+        var shortName = templateName
             .ToLowerInvariant()
             .Replace(" ", "-")
             .Replace("_", "-");
+
+        // Remove characters that are invalid for dotnet new short names / filesystem
+        shortName = System.Text.RegularExpressions.Regex.Replace(shortName, @"[/\\:*?""<>|#%&{}!@+`=\[\]]", "");
+
+        // Collapse repeated hyphens and trim leading/trailing hyphens
+        shortName = System.Text.RegularExpressions.Regex.Replace(shortName, @"-{2,}", "-").Trim('-');
+
+        return string.IsNullOrEmpty(shortName) ? "template" : shortName;
     }
 }

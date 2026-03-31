@@ -71,6 +71,7 @@ internal sealed class TemplateSearchTool
                 Language = t.TagsCollection.GetValueOrDefault("language"),
                 Type = t.TagsCollection.GetValueOrDefault("type"),
                 Source = "local",
+                Relevance = CalculateRelevance(t, query),
             });
         }
 
@@ -103,10 +104,22 @@ internal sealed class TemplateSearchTool
                         PackageId = packageInfo.Name,
                         PackageVersion = packageInfo.Version,
                         TotalDownloads = packageInfo.TotalDownloads,
+                        Relevance = CalculateRelevance(t, query),
                     });
                 }
             }
         }
+
+        // Sort results by relevance score (highest first)
+        resultList.Sort((a, b) =>
+        {
+            double scoreA = 0, scoreB = 0;
+            var propA = a.GetType().GetProperty("Relevance");
+            var propB = b.GetType().GetProperty("Relevance");
+            if (propA != null) scoreA = (double)(propA.GetValue(a) ?? 0.0);
+            if (propB != null) scoreB = (double)(propB.GetValue(b) ?? 0.0);
+            return scoreB.CompareTo(scoreA);
+        });
 
         activity?.SetTag("mcp.result.count", resultList.Count);
         return JsonSerializer.Serialize(resultList, new JsonSerializerOptions { WriteIndented = true });
@@ -115,5 +128,56 @@ internal sealed class TemplateSearchTool
         {
             McpTelemetry.RecordDuration("template_search", sw.Elapsed.TotalMilliseconds);
         }
+    }
+
+    /// <summary>
+    /// Calculate a relevance score for a template against a query.
+    /// Scores: exact short name match (0.5), name contains (0.3), classification match (0.2),
+    /// description match (0.1), identity match (0.15).
+    /// </summary>
+    private static double CalculateRelevance(Abstractions.ITemplateInfo template, string? query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return 0.5; // No query = equal relevance
+        }
+
+        double score = 0.0;
+
+        // Exact short name match — strongest signal
+        if (template.ShortNameList.Any(sn => sn.Equals(query, StringComparison.OrdinalIgnoreCase)))
+        {
+            score += 0.5;
+        }
+        else if (template.ShortNameList.Any(sn => sn.Contains(query, StringComparison.OrdinalIgnoreCase)))
+        {
+            score += 0.3;
+        }
+
+        // Name match
+        if (template.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 0.25;
+        }
+
+        // Classification match
+        if (template.Classifications.Any(c => c.Contains(query, StringComparison.OrdinalIgnoreCase)))
+        {
+            score += 0.15;
+        }
+
+        // Description match
+        if (template.Description?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
+        {
+            score += 0.1;
+        }
+
+        // Identity match
+        if (template.Identity.Contains(query, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 0.1;
+        }
+
+        return Math.Min(score, 1.0);
     }
 }

@@ -23,6 +23,7 @@ internal class TemplateEngineService : IDisposable
     private readonly Bootstrapper _bootstrapper;
     private readonly EngineEnvironmentSettings _environmentSettings;
     private readonly ILogger _logger;
+    private readonly SemaphoreSlim _sdkInstallSemaphore = new(1, 1);
     private bool _sdkTemplatesInstalled;
 
     public TemplateEngineService(ILoggerFactory loggerFactory)
@@ -44,10 +45,17 @@ internal class TemplateEngineService : IDisposable
             return;
         }
 
-        _sdkTemplatesInstalled = true;
-
+        await _sdkInstallSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // Double-check after acquiring the lock
+            if (_sdkTemplatesInstalled)
+            {
+                return;
+            }
+
+            try
+            {
             var sdkTemplatePaths = DiscoverSdkTemplatePackages();
             if (sdkTemplatePaths.Count == 0)
             {
@@ -93,10 +101,18 @@ internal class TemplateEngineService : IDisposable
                     }
                 }
             }
+
+            // Only mark as installed on success — allows retry on failure
+            _sdkTemplatesInstalled = true;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to discover SDK template packages. SDK templates may not be available.");
+            _logger.LogWarning(ex, "Failed to discover SDK template packages. SDK templates may not be available. Will retry on next call.");
+        }
+        }
+        finally
+        {
+            _sdkInstallSemaphore.Release();
         }
     }
 
