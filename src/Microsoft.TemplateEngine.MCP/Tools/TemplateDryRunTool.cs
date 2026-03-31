@@ -43,7 +43,16 @@ internal sealed class TemplateDryRunTool
             autoInstallMessage = message;
         }
 
-        var parameters = TemplateInstantiateTool.ParseParameters(parametersJson);
+        var parameters = TemplateInstantiateTool.ParseParameters(parametersJson, out var parseError);
+
+        if (parseError != null)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = parseError,
+                hint = "Provide a valid JSON object, e.g., {\"Framework\": \"net8.0\"}.",
+            }, new JsonSerializerOptions { WriteIndented = true });
+        }
 
         // 3. Apply smart defaults
         var smartDefaults = TemplateEngineService.SuggestSmartDefaults(template, parameters);

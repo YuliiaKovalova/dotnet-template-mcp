@@ -33,7 +33,7 @@ internal sealed class TemplateInstallTool
         // Check if already installed (idempotent)
         var existingPackages = await engineService.GetManagedTemplatePackagesAsync(cancellationToken).ConfigureAwait(false);
         var existingPackage = existingPackages.FirstOrDefault(p =>
-            p.Identifier.Contains(packageId, StringComparison.OrdinalIgnoreCase));
+            p.Identifier.Equals(packageId, StringComparison.OrdinalIgnoreCase));
 
         if (existingPackage != null)
         {
@@ -116,7 +116,7 @@ internal sealed class TemplateInstallTool
         var allTemplates = await engineService.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
         var packages = await engineService.GetManagedTemplatePackagesAsync(cancellationToken).ConfigureAwait(false);
         var installedPackage = packages.FirstOrDefault(p =>
-            p.Identifier.Contains(packageId, StringComparison.OrdinalIgnoreCase));
+            p.Identifier.Equals(packageId, StringComparison.OrdinalIgnoreCase));
 
         var installedTemplates = new List<object>();
         if (installedPackage != null)
@@ -142,26 +142,7 @@ internal sealed class TemplateInstallTool
             }
         }
 
-        // Fallback: return all templates if package matching didn't work
-        if (installedTemplates.Count == 0)
-        {
-            foreach (var t in allTemplates)
-            {
-                installedTemplates.Add(new
-                {
-                    t.Identity,
-                    ShortNames = t.ShortNameList,
-                    t.Name,
-                    t.Description,
-                    t.Author,
-                    t.Classifications,
-                    Language = t.TagsCollection.GetValueOrDefault("language"),
-                    Type = t.TagsCollection.GetValueOrDefault("type"),
-                    ParameterCount = t.ParameterDefinitions.Count,
-                });
-            }
-        }
-
+        // If package matching didn't find templates, return empty — don't return all templates
         return installedTemplates;
     }
 }

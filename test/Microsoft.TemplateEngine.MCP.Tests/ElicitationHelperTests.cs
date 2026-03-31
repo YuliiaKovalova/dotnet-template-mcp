@@ -73,6 +73,44 @@ public class ElicitationHelperTests
     }
 
     [Fact]
+    public void GetMissingRequiredParameters_TreatsNullValueAsMissing()
+    {
+        // Arrange — a parameter with null value should still be elicited
+        var reqParam = CreateParameter("Framework", "string", PrecedenceDefinition.Required);
+        var template = A.Fake<ITemplateInfo>();
+        A.CallTo(() => template.ParameterDefinitions).Returns(
+            new ParameterDefinitionSet([reqParam]));
+
+        var existing = new Dictionary<string, string?> { ["Framework"] = null };
+
+        // Act
+        var missing = ElicitationHelper.GetMissingRequiredParameters(template, existing);
+
+        // Assert
+        Assert.Single(missing);
+        Assert.Equal("Framework", missing[0].Name);
+    }
+
+    [Fact]
+    public void GetMissingRequiredParameters_TreatsEmptyStringAsMissing()
+    {
+        // Arrange — a parameter with empty string value should still be elicited
+        var reqParam = CreateParameter("Framework", "string", PrecedenceDefinition.Required);
+        var template = A.Fake<ITemplateInfo>();
+        A.CallTo(() => template.ParameterDefinitions).Returns(
+            new ParameterDefinitionSet([reqParam]));
+
+        var existing = new Dictionary<string, string?> { ["Framework"] = "" };
+
+        // Act
+        var missing = ElicitationHelper.GetMissingRequiredParameters(template, existing);
+
+        // Assert
+        Assert.Single(missing);
+        Assert.Equal("Framework", missing[0].Name);
+    }
+
+    [Fact]
     public void BuildSchemaFromParameters_MapsStringParam()
     {
         var param = CreateParameter("ProjectName", "string", PrecedenceDefinition.Required, defaultValue: "MyApp");
