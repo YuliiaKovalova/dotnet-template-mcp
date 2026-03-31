@@ -61,6 +61,18 @@ Example call:
 }
 ```
 
+**Common parameter combinations:**
+
+| Template | Parameters | Example |
+|----------|-----------|---------|
+| `webapi` | `--auth` (None, Individual, SingleOrg, Windows), `--aot` (native AOT) | `dotnet new webapi -n MyApi --auth Individual --aot` |
+| `webapi` | `--use-controllers` (use controllers vs minimal APIs) | `dotnet new webapi -n MyApi --use-controllers` |
+| `blazor` | `--interactivity` (None, Server, WebAssembly, Auto), `--auth` | `dotnet new blazor -n MyApp --interactivity Server` |
+| `grpc` | `--aot` (native AOT) | `dotnet new grpc -n MyService --aot` |
+| `worker` | `--aot` (native AOT) | `dotnet new worker -n MyWorker --aot` |
+
+Use `template_inspect` to see all available parameters for any template.
+
 Example response (CPM solution):
 ```json
 {
