@@ -153,7 +153,7 @@ internal sealed class PostCreationProcessor
                 var upgrade = fileResult.VersionUpgrades.FirstOrDefault(u => u.PackageName == name);
                 var versionToUse = upgrade?.NewVersion ?? currentVersion;
 
-                // Add to Directory.Packages.props if not already there
+                // Add to Directory.Packages.props if not already there, or update if stale
                 if (!existingVersions.Contains(name))
                 {
                     if (packageVersionItemGroup == null)
@@ -172,6 +172,24 @@ internal sealed class PostCreationProcessor
                     propsModified = true;
 
                     _logger.LogInformation("Added to Directory.Packages.props: {Package} {Version}", name, versionToUse);
+                }
+                else if (resolveLatestVersions && upgrade != null)
+                {
+                    // Package exists in props but version is stale — update it
+                    var existingElement = propsRoot.Descendants(propsNs + "PackageVersion")
+                        .FirstOrDefault(pv => pv.Attribute("Include")?.Value
+                            ?.Equals(name, StringComparison.OrdinalIgnoreCase) == true);
+                    if (existingElement != null)
+                    {
+                        var versionAttrInProps = existingElement.Attribute("Version");
+                        if (versionAttrInProps != null && !versionAttrInProps.Value.Equals(upgrade.NewVersion, StringComparison.Ordinal))
+                        {
+                            versionAttrInProps.Value = upgrade.NewVersion;
+                            propsModified = true;
+                            _logger.LogInformation("Updated in Directory.Packages.props: {Package} {Old} → {New}",
+                                name, upgrade.OldVersion, upgrade.NewVersion);
+                        }
+                    }
                 }
 
                 // Strip Version from .csproj PackageReference

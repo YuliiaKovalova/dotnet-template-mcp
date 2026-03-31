@@ -25,6 +25,30 @@ public class SmartDefaultsTests
     }
 
     [Fact]
+    public void SuggestSmartDefaults_AotEnabled_PicksNet10OverNet9()
+    {
+        // Regression test: lexicographic sort picks net9.0 > net10.0 (wrong)
+        var template = CreateTemplateWithParams(
+            ("EnableAot", "bool", null),
+            ("Framework", "choice", new[] { "net8.0", "net9.0", "net10.0" }));
+        var userParams = new Dictionary<string, string?> { { "EnableAot", "true" } };
+
+        var suggestions = TemplateEngineService.SuggestSmartDefaults(template, userParams);
+
+        Assert.Contains("Framework", suggestions.Keys);
+        Assert.Equal("net10.0", suggestions["Framework"]);
+    }
+
+    [Fact]
+    public void ParseFrameworkVersion_ParsesCorrectly()
+    {
+        Assert.Equal(new Version(8, 0), TemplateEngineService.ParseFrameworkVersion("net8.0"));
+        Assert.Equal(new Version(9, 0), TemplateEngineService.ParseFrameworkVersion("net9.0"));
+        Assert.Equal(new Version(10, 0), TemplateEngineService.ParseFrameworkVersion("net10.0"));
+        Assert.Equal(new Version(0, 0), TemplateEngineService.ParseFrameworkVersion("unknown"));
+    }
+
+    [Fact]
     public void SuggestSmartDefaults_AotEnabled_FrameworkAlreadySet_DoesNotOverride()
     {
         var template = CreateTemplateWithParams(

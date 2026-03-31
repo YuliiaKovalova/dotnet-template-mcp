@@ -64,6 +64,7 @@ No existing tooling does this — most template authors discover issues only aft
 | `template_compose` | Execute a sequence of templates (project + items) in one workflow |
 | `template_suggest_parameters` | Suggest parameter values with rationale based on cross-parameter relationships |
 | `template_validate` | Validate a local template directory for authoring issues before publishing |
+| `template_compare` | Compare 2+ templates side by side — parameters, features, frameworks |
 | `solution_analyze` | Analyze a solution/workspace — project structure, frameworks, CPM status |
 
 📖 [Full tool reference →](docs/tool-reference.md)
@@ -77,13 +78,13 @@ A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/yuliia
 ### Global tool (.NET 8+)
 
 ```bash
-dotnet tool install --global DotnetTemplateMCP --version 1.2.0
+dotnet tool install --global DotnetTemplateMCP --version 1.3.0
 ```
 
 ### Zero-install with `dnx` (.NET 10+)
 
 ```bash
-dnx -y DotnetTemplateMCP --version 1.2.0
+dnx -y DotnetTemplateMCP --version 1.3.0
 ```
 
 ### VS Code / GitHub Copilot
@@ -96,7 +97,7 @@ Add to `mcp.json`:
     "dotnet-templates": {
       "type": "stdio",
       "command": "dnx",
-      "args": ["-y", "DotnetTemplateMCP", "--version", "1.2.0"]
+      "args": ["-y", "DotnetTemplateMCP", "--version", "1.3.0"]
     }
   }
 }
@@ -207,11 +208,11 @@ Chain multiple templates in one call with `template_compose`:
 
 ### Tool Profiles (Lite vs Full)
 
-By default, all 13 tools are available. If your agent works better with fewer tools, set the `MCP_TEMPLATE_TOOL_PROFILE` environment variable:
+By default, all 14 tools are available. If your agent works better with fewer tools, set the `MCP_TEMPLATE_TOOL_PROFILE` environment variable:
 
 | Profile | Tools | When to use |
 |---------|-------|-------------|
-| `full` (default) | All 13 tools | Full control — advanced workflows, composition, custom templates |
+| `full` (default) | All 14 tools | Full control — advanced workflows, composition, custom templates |
 | `lite` | 5 core tools | Simpler agents that just need to find and create projects |
 
 **Lite profile tools:** `template_from_intent`, `template_instantiate`, `template_inspect`, `template_search`, `template_dry_run`

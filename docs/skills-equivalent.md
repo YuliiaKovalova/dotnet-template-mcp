@@ -257,7 +257,37 @@ When creating .NET projects, apply these rules:
 
 ---
 
-## Skill 11: Parameter Validation
+## Skill 11: Template Validation (template.json authoring)
+
+A **`template-validation`** skill now exists in the dotnet/skills plugin ([PR #480](https://github.com/dotnet/skills/pull/480)). It encodes 8 validation categories as text rules for the LLM to apply when reviewing `template.json` files:
+
+```markdown
+# template-validation
+
+When the user asks to validate a template.json:
+
+1. Check required fields: identity, name, shortName (error if missing)
+2. Validate identity format (reverse-DNS, no spaces)
+3. Check shortName against reserved CLI commands (new, build, run, test, publish, restore, clean, pack, add, remove, list, nuget, tool, sln, help)
+4. For each symbol: validate type, datatype, defaultValue vs choices, computed/generated completeness
+5. Check parameter prefix collisions
+6. Validate post-actions have actionId
+7. Check constraints have type and args
+8. Suggest tags (language, type) if missing
+```
+
+**What you lose vs MCP `template_validate`:**
+- ⚠️ LLM must apply all 8 rules manually — it may skip categories or misapply checks
+- ⚠️ No structured JSON output with error/warning/suggestion counts
+- ⚠️ LLM might not catch prefix collisions or cross-check defaultValue against choices list
+- ✅ Works for simple templates — the skill content is detailed enough to guide good validation
+- ✅ The skill's validation rules match the MCP tool's implementation (8 categories, same reserved names list)
+
+**Feasibility:** ⚠️ Works for straightforward cases, but less reliable for complex templates with many symbols
+
+---
+
+## Skill 12: Parameter Validation
 
 Not possible as a skill. Validation requires:
 - Knowing every template's parameter schema (types, choices, defaults)
@@ -270,7 +300,7 @@ A skill can say *"validate parameters before creating"* but the model would have
 
 ---
 
-## Skill 12: Constraint Checking
+## Skill 13: Constraint Checking
 
 Not possible as a skill. Constraints are embedded in `template.json` metadata — OS requirements, SDK version minimums, workload dependencies. The CLI doesn't expose these in a parseable way before creation.
 
@@ -278,7 +308,7 @@ Not possible as a skill. Constraints are embedded in `template.json` metadata �
 
 ---
 
-## Skill 13: SDK Template Auto-Discovery
+## Skill 14: SDK Template Auto-Discovery
 
 Not needed as a skill — `dotnet new` already knows about SDK templates. But MCP's auto-discovery scans `{dotnet_root}/templates/` and pre-installs them into the MCP host's cache, which is a different host from the CLI.
 
@@ -300,11 +330,12 @@ Not needed as a skill — `dotnet new` already knows about SDK templates. But MC
 | Templates inventory | ✅ Works | Less metadata |
 | Intent resolution | ❌ Brittle | No scoring, no adaptation, no candidates |
 | Smart defaults | ❌ Unreliable | Text rules ≠ enforcement |
+| Template validation (authoring) | ⚠️ Works for simple cases | No structured output, may skip categories |
 | Parameter validation | ❌ Not practical | Can't read template schemas |
 | Constraint checking | ❌ Not possible | Metadata not exposed by CLI |
 
 ## Bottom line
 
-**5 out of 12 capabilities** work reasonably as skills. The rest either degrade significantly or aren't possible. The gap is widest where the MCP server uses the template engine API directly — validation, smart defaults, constraints, and intent resolution all require programmatic access to template metadata that `dotnet new` CLI doesn't expose in a structured way.
+**6 out of 13 capabilities** work reasonably as skills (up from 5/12, thanks to the new `template-validation` skill). The rest either degrade significantly or aren't possible. The gap is widest where the MCP server uses the template engine API directly — validation, smart defaults, constraints, and intent resolution all require programmatic access to template metadata that `dotnet new` CLI doesn't expose in a structured way.
 
 Skills are great for the *"how we do things here"* layer on top — team conventions, post-creation setup, coding standards. But they can't replace the engine-level intelligence that MCP provides.

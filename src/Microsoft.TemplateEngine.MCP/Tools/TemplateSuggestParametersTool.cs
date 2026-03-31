@@ -40,7 +40,17 @@ internal sealed class TemplateSuggestParametersTool
                 }, new JsonSerializerOptions { WriteIndented = true });
             }
 
-            var parameters = TemplateInstantiateTool.ParseParameters(parametersJson);
+            var parameters = TemplateInstantiateTool.ParseParameters(parametersJson, out var parseError);
+            if (parseError != null)
+            {
+                McpTelemetry.RecordError(activity, "template_suggest_parameters", parseError);
+                return JsonSerializer.Serialize(new
+                {
+                    error = parseError,
+                    hint = "Provide a valid JSON object, e.g., {\"EnableAot\": \"true\"}.",
+                }, new JsonSerializerOptions { WriteIndented = true });
+            }
+
             var suggestions = TemplateEngineFacade.GetParameterSuggestions(template, parameters);
 
             var response = new

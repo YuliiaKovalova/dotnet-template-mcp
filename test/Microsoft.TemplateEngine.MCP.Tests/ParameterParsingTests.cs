@@ -45,6 +45,27 @@ public class ParameterParsingTests
     }
 
     [Fact]
+    public void ParseParameters_InvalidJson_ReportsParseError()
+    {
+        var result = TemplateInstantiateTool.ParseParameters("not valid json", out var parseError);
+
+        Assert.Empty(result);
+        Assert.NotNull(parseError);
+        Assert.Contains("Invalid JSON", parseError);
+    }
+
+    [Fact]
+    public void ParseParameters_ValidJson_NoParseError()
+    {
+        string json = """{"Framework": "net8.0"}""";
+
+        var result = TemplateInstantiateTool.ParseParameters(json, out var parseError);
+
+        Assert.Single(result);
+        Assert.Null(parseError);
+    }
+
+    [Fact]
     public void ParseParameters_NullValue_ReturnsNullEntry()
     {
         string json = """{"Framework": null}""";

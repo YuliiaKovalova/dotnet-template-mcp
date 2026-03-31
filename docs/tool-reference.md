@@ -61,6 +61,18 @@ Example call:
 }
 ```
 
+**Common parameter combinations:**
+
+| Template | Parameters | Example |
+|----------|-----------|---------|
+| `webapi` | `--auth` (None, Individual, SingleOrg, Windows), `--aot` (native AOT) | `dotnet new webapi -n MyApi --auth Individual --aot` |
+| `webapi` | `--use-controllers` (use controllers vs minimal APIs) | `dotnet new webapi -n MyApi --use-controllers` |
+| `blazor` | `--interactivity` (None, Server, WebAssembly, Auto), `--auth` | `dotnet new blazor -n MyApp --interactivity Server` |
+| `grpc` | `--aot` (native AOT) | `dotnet new grpc -n MyService --aot` |
+| `worker` | `--aot` (native AOT) | `dotnet new worker -n MyWorker --aot` |
+
+Use `template_inspect` to see all available parameters for any template.
+
 Example response (CPM solution):
 ```json
 {
@@ -208,6 +220,18 @@ Validate a local template directory for authoring issues before publishing. Catc
 ```
 
 **When to use:** Before running `dotnet new install` on a template you're building, or as part of a CI pipeline for template packages.
+
+---
+
+## `template_compare`
+
+Compare 2 or more templates side by side — parameters, auth support, AOT, framework options, and classifications. Useful when deciding between templates (e.g., `webapi` vs `webapp`, `blazorserver` vs `blazorwasm`).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `templateNames` | string | Yes | Comma-separated template identities or short names (e.g., `"webapi,webapp"`) |
+
+Returns for each template: identity, parameters with types/defaults/choices, feature support flags (auth, AOT, Docker, controllers, interactivity), available frameworks, and classifications.
 
 ---
 

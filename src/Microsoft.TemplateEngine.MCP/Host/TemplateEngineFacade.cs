@@ -46,7 +46,14 @@ internal class TemplateEngineFacade
         ITemplateInfo template,
         string? parametersJson)
     {
-        var parameters = ParseParameters(parametersJson);
+        var parameters = ParseParameters(parametersJson, out var parseError);
+
+        if (parseError != null)
+        {
+            return ParameterPreparationResult.Failed(
+                new List<string> { parseError },
+                template.Identity);
+        }
 
         // Apply smart defaults
         var smartDefaults = TemplateEngineService.SuggestSmartDefaults(template, parameters);
@@ -100,7 +107,7 @@ internal class TemplateEngineFacade
             if (frameworkParam?.Choices != null && !userParameters.ContainsKey("Framework"))
             {
                 var bestFramework = frameworkParam.Choices.Keys
-                    .OrderByDescending(k => k)
+                    .OrderByDescending(k => TemplateEngineService.ParseFrameworkVersion(k))
                     .FirstOrDefault();
                 if (bestFramework != null)
                 {
@@ -425,6 +432,13 @@ internal class TemplateEngineFacade
 
     private static Dictionary<string, string?> ParseParameters(string? parametersJson)
     {
+        return ParseParameters(parametersJson, out _);
+    }
+
+    private static Dictionary<string, string?> ParseParameters(string? parametersJson, out string? parseError)
+    {
+        parseError = null;
+
         if (string.IsNullOrWhiteSpace(parametersJson))
         {
             return new Dictionary<string, string?>();
@@ -442,8 +456,9 @@ internal class TemplateEngineFacade
                 kvp => kvp.Key,
                 kvp => kvp.Value.ValueKind == JsonValueKind.Null ? null : kvp.Value.ToString());
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            parseError = $"Invalid JSON in parametersJson: {ex.Message}";
             return new Dictionary<string, string?>();
         }
     }

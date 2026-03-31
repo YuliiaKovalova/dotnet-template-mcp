@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-03-31
+
+### Added
+- **`template_compare` tool** — compare 2+ templates side by side showing parameters, feature support flags (auth, AOT, Docker, controllers, interactivity), available frameworks, and classifications. Useful when deciding between templates like `webapi` vs `webapp`.
+- **Search relevance scoring** — `template_search` now ranks results by relevance (exact short name match → name → classification → description → identity) instead of just concatenating local + NuGet results.
+- **Intent synonym expansion** — added 11 new template keywords (.NET Aspire, Azure Functions, Orleans, WinUI, Blazor Web App, Razor components) and 5 new parameter keywords (Blazor interactivity modes). Total: 60 template keywords, 41 parameter keywords, 11 classification keywords.
+- **Invalid datatype validation** — `template_validate` now flags unknown datatypes (e.g., `"datatype": "invalid-type"`) against the valid list: `string`, `bool`, `choice`, `int`, `float`, `hex`, `text`.
+- **Common parameter combinations** — `docs/tool-reference.md` now includes a quick-reference table of common template + parameter combinations (webapi auth, Blazor interactivity, AOT).
+- **Template validation skill documentation** — `docs/skills-equivalent.md` now covers the new `template-validation` Copilot skill from dotnet/skills PR #480 with feasibility analysis.
+
+### Fixed
+- **Integer datatype validation** — `template_validate` and `ValidateParameters` used `"integer"` instead of `"int"` for datatype checks, meaning integer parameters were never validated. Fixed in both `TemplateValidateTool.cs` and `TemplateEngineService.cs`.
+- **Framework version sorting** — smart defaults picked `net9.0` over `net10.0` due to lexicographic string sort. Now uses numeric version parsing via `ParseFrameworkVersion()`. Fixed in both `TemplateEngineService` and `TemplateEngineFacade`.
+- **DataType null safety** — `ValidateParameters` could throw `NullReferenceException` when a template parameter had no `DataType`. Added null checks before all `.Equals()` calls.
+- **Tags validation when absent** — `template_validate` skipped tag suggestions when the `tags` field was entirely absent. Now suggests adding language/type tags regardless.
+- **ParseParameters silent JSON failure** — `ParseParameters` silently returned an empty dictionary on malformed JSON. Now reports structured parse errors to all callers (instantiate, dry-run, suggest-parameters, facade).
+- **Elicitation null-value bypass** — `GetMissingRequiredParameters` treated `{"Framework": null}` as "provided", skipping elicitation. Now checks for null/empty values.
+- **Post-processing crash after creation** — `template_instantiate` post-processing (CPM + NuGet versions) was not wrapped in try/catch. Failures after project creation now return structured responses instead of unhandled exceptions.
+- **Template install package matching** — `TemplateInstallTool` used `Contains` for package matching, which could match wrong packages. Changed to exact `Equals`. Removed fallback that returned all templates when matching failed.
+- **SDK bootstrap race condition** — replaced plain `bool` flag with `SemaphoreSlim` double-check locking. Failures now allow retry on next call instead of permanently suppressing SDK template discovery.
+- **CPM stale version updates** — post-processing now updates existing packages in `Directory.Packages.props` to latest version instead of skipping them when they already exist with a stale version.
+- **Short name sanitization** — `ToShortName()` now strips filesystem-unsafe and dotnet-new-invalid characters (`/ \ : * ? " < > |` etc.), collapses repeated hyphens, and falls back to `"template"` for empty results.
+
 ## [1.2.0] - 2026-03-06
 
 ### Added

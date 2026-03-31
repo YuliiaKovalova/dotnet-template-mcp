@@ -87,7 +87,7 @@ internal static class ElicitationHelper
         return template.ParameterDefinitions
             .Where(p => p.Precedence.PrecedenceDefinition == PrecedenceDefinition.Required
                 && !IsInternalParameter(p)
-                && !existingParameters.ContainsKey(p.Name))
+                && (!existingParameters.TryGetValue(p.Name, out var existingValue) || string.IsNullOrEmpty(existingValue)))
             .ToList();
     }
 

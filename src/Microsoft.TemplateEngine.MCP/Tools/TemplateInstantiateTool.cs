@@ -54,7 +54,16 @@ internal sealed class TemplateInstantiateTool
             autoInstallMessage = message;
         }
 
-        var parameters = ParseParameters(parametersJson);
+        var parameters = ParseParameters(parametersJson, out var parseError);
+
+        if (parseError != null)
+        {
+            McpTelemetry.RecordError(activity, "template_instantiate", parseError);
+            return McpErrorResponse.Serialize("invalid_parameters",
+                parseError,
+                "Provide a valid JSON object, e.g., {\"Framework\": \"net8.0\", \"EnableAot\": \"true\"}.",
+                retryable: true);
+        }
 
         // 3. Elicit missing required parameters interactively (if supported)
         if (featureFlags.ElicitationEnabled && ElicitationHelper.IsElicitationSupported(server))
@@ -114,14 +123,24 @@ internal sealed class TemplateInstantiateTool
 
         // 8. Post-creation processing: CPM adaptation + NuGet version upgrades
         PostCreationResult? postCreationResult = null;
+        string? postCreationError = null;
         if (result.Status == Microsoft.TemplateEngine.Edge.Template.CreationResultStatus.Success)
         {
-            postCreationResult = await postProcessor.ProcessAsync(
-                resolvedOutputPath, resolveLatestVersions, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                postCreationResult = await postProcessor.ProcessAsync(
+                    resolvedOutputPath, resolveLatestVersions, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                postCreationError = $"Project created successfully, but post-processing failed: {ex.Message}. " +
+                    "The project files are on disk but CPM adaptation and NuGet version upgrades were not applied.";
+                McpTelemetry.RecordError(activity, "template_instantiate", $"Post-processing failed: {ex.Message}");
+            }
         }
 
         return SerializeCreationResult(result, autoInstallMessage, constraintWarnings,
-            smartDefaults.Count > 0 ? smartDefaults : null, postCreationResult);
+            smartDefaults.Count > 0 ? smartDefaults : null, postCreationResult, postCreationError);
         }
         finally
         {
@@ -131,6 +150,13 @@ internal sealed class TemplateInstantiateTool
 
     internal static Dictionary<string, string?> ParseParameters(string? parametersJson)
     {
+        return ParseParameters(parametersJson, out _);
+    }
+
+    internal static Dictionary<string, string?> ParseParameters(string? parametersJson, out string? parseError)
+    {
+        parseError = null;
+
         if (string.IsNullOrWhiteSpace(parametersJson))
         {
             return new Dictionary<string, string?>();
@@ -148,8 +174,9 @@ internal sealed class TemplateInstantiateTool
                 kvp => kvp.Key,
                 kvp => kvp.Value.ValueKind == JsonValueKind.Null ? null : kvp.Value.ToString());
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            parseError = $"Invalid JSON in parametersJson: {ex.Message}";
             return new Dictionary<string, string?>();
         }
     }
@@ -159,7 +186,8 @@ internal sealed class TemplateInstantiateTool
         string? autoInstallMessage = null,
         IReadOnlyList<string>? constraintWarnings = null,
         IReadOnlyDictionary<string, string>? appliedSmartDefaults = null,
-        PostCreationResult? postCreationResult = null)
+        PostCreationResult? postCreationResult = null,
+        string? postCreationError = null)
     {
         var postActions = result.CreationResult?.PostActions?.Select(pa => new
         {
@@ -217,6 +245,7 @@ internal sealed class TemplateInstantiateTool
             ConstraintWarnings = constraintWarnings?.Count > 0 ? constraintWarnings : null,
             AppliedSmartDefaults = appliedSmartDefaults?.Count > 0 ? appliedSmartDefaults : null,
             PostCreation = postCreationSummary,
+            PostCreationError = postCreationError,
             PrimaryOutputs = primaryOutputs,
             PostActions = postActions,
             FileChanges = fileChanges,

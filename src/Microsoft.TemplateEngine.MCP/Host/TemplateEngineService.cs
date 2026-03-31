@@ -23,6 +23,7 @@ internal class TemplateEngineService : IDisposable
     private readonly Bootstrapper _bootstrapper;
     private readonly EngineEnvironmentSettings _environmentSettings;
     private readonly ILogger _logger;
+    private readonly SemaphoreSlim _sdkInstallSemaphore = new(1, 1);
     private bool _sdkTemplatesInstalled;
 
     public TemplateEngineService(ILoggerFactory loggerFactory)
@@ -44,10 +45,17 @@ internal class TemplateEngineService : IDisposable
             return;
         }
 
-        _sdkTemplatesInstalled = true;
-
+        await _sdkInstallSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // Double-check after acquiring the lock
+            if (_sdkTemplatesInstalled)
+            {
+                return;
+            }
+
+            try
+            {
             var sdkTemplatePaths = DiscoverSdkTemplatePackages();
             if (sdkTemplatePaths.Count == 0)
             {
@@ -93,10 +101,18 @@ internal class TemplateEngineService : IDisposable
                     }
                 }
             }
+
+            // Only mark as installed on success — allows retry on failure
+            _sdkTemplatesInstalled = true;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to discover SDK template packages. SDK templates may not be available.");
+            _logger.LogWarning(ex, "Failed to discover SDK template packages. SDK templates may not be available. Will retry on next call.");
+        }
+        }
+        finally
+        {
+            _sdkInstallSemaphore.Release();
         }
     }
 
@@ -405,7 +421,7 @@ internal class TemplateEngineService : IDisposable
             }
 
             // Validate choice parameters
-            if (paramDef.DataType.Equals("choice", StringComparison.OrdinalIgnoreCase) && paramDef.Choices != null)
+            if (paramDef.DataType != null && paramDef.DataType.Equals("choice", StringComparison.OrdinalIgnoreCase) && paramDef.Choices != null)
             {
                 var validChoices = paramDef.Choices.Keys.ToList();
                 if (!validChoices.Any(c => c.Equals(paramValue, StringComparison.OrdinalIgnoreCase)))
@@ -415,7 +431,7 @@ internal class TemplateEngineService : IDisposable
             }
 
             // Validate bool parameters
-            if (paramDef.DataType.Equals("bool", StringComparison.OrdinalIgnoreCase))
+            if (paramDef.DataType != null && paramDef.DataType.Equals("bool", StringComparison.OrdinalIgnoreCase))
             {
                 if (!bool.TryParse(paramValue, out _))
                 {
@@ -424,7 +440,7 @@ internal class TemplateEngineService : IDisposable
             }
 
             // Validate integer parameters
-            if (paramDef.DataType.Equals("integer", StringComparison.OrdinalIgnoreCase))
+            if (paramDef.DataType != null && paramDef.DataType.Equals("int", StringComparison.OrdinalIgnoreCase))
             {
                 if (!long.TryParse(paramValue, out _))
                 {
@@ -460,8 +476,10 @@ internal class TemplateEngineService : IDisposable
                 !userParameters.ContainsKey("Framework"))
             {
                 // Pick the highest available framework (AOT works best with latest)
+                // Use version-aware sorting: extract numeric version from "netX.Y" to avoid
+                // lexicographic errors (e.g., "net9.0" > "net10.0" alphabetically)
                 var bestFramework = frameworkParam.Choices.Keys
-                    .OrderByDescending(k => k)
+                    .OrderByDescending(k => ParseFrameworkVersion(k))
                     .FirstOrDefault();
                 if (bestFramework != null)
                 {
@@ -547,5 +565,24 @@ internal class TemplateEngineService : IDisposable
     public void Dispose()
     {
         _bootstrapper.Dispose();
+    }
+
+    /// <summary>
+    /// Parse a framework moniker like "net8.0" or "net10.0" into a comparable version.
+    /// Falls back to Version(0, 0) for unrecognized formats to keep them at the bottom.
+    /// </summary>
+    internal static Version ParseFrameworkVersion(string framework)
+    {
+        // Strip "net" prefix and try to parse as a version
+        if (framework.StartsWith("net", StringComparison.OrdinalIgnoreCase))
+        {
+            var versionPart = framework.Substring(3);
+            if (Version.TryParse(versionPart, out var version))
+            {
+                return version;
+            }
+        }
+
+        return new Version(0, 0);
     }
 }

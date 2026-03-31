@@ -75,7 +75,7 @@ public class ParameterValidationTests
     [Fact]
     public void ValidateParameters_InvalidIntegerValue_ReturnsError()
     {
-        var template = CreateTemplateWithParam("Port", "integer");
+        var template = CreateTemplateWithParam("Port", "int");
         var parameters = new Dictionary<string, string?> { { "Port", "abc" } };
 
         var errors = TemplateEngineService.ValidateParameters(template, parameters);

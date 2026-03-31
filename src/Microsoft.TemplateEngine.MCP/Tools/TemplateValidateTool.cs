@@ -393,13 +393,20 @@ internal sealed class TemplateValidateTool
         }
 
         // Integer parameter validation
-        if (dataType?.Equals("integer", StringComparison.OrdinalIgnoreCase) == true)
+        if (dataType?.Equals("int", StringComparison.OrdinalIgnoreCase) == true)
         {
             var defaultValue = param["defaultValue"]?.GetValue<string>();
             if (defaultValue != null && !long.TryParse(defaultValue, out _))
             {
                 result.Errors.Add($"Integer parameter '{name}' has non-integer defaultValue '{defaultValue}'.");
             }
+        }
+
+        // Invalid datatype validation
+        string[] validDatatypes = ["string", "bool", "choice", "int", "float", "hex", "text"];
+        if (dataType != null && !validDatatypes.Contains(dataType, StringComparer.OrdinalIgnoreCase))
+        {
+            result.Errors.Add($"Parameter '{name}' has invalid datatype '{dataType}'. Valid datatypes: {string.Join(", ", validDatatypes)}.");
         }
 
         // Optional parameter without default (issue dotnet/templating#2623)
@@ -515,6 +522,12 @@ internal sealed class TemplateValidateTool
         var tags = obj["tags"];
         if (tags is not JsonObject tagsObj)
         {
+            if (tags == null)
+            {
+                result.Suggestions.Add("No 'language' tag. Adding tags.language (e.g. \"C#\") improves filtering in 'dotnet new list --language'.");
+                result.Suggestions.Add("No 'type' tag. Adding tags.type (e.g. \"project\" or \"item\") improves categorization.");
+            }
+
             return;
         }
 
