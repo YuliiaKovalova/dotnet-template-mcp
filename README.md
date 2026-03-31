@@ -69,6 +69,10 @@ No existing tooling does this — most template authors discover issues only aft
 
 📖 [Full tool reference →](docs/tool-reference.md)
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/yuliiakovalova-dotnet-template-mcp).
+
 ## Quick Start
 
 ### Global tool (.NET 8+)
