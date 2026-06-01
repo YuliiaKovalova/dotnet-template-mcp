@@ -36,6 +36,7 @@ internal sealed class TemplateDryRunTool
             var (resolved, message) = await engineService.AutoResolveAndInstallAsync(templateName, cancellationToken).ConfigureAwait(false);
             if (resolved == null)
             {
+                McpTelemetry.RecordError(activity, "template_dry_run", message ?? "auto-resolve failed");
                 return JsonSerializer.Serialize(new { error = message }, new JsonSerializerOptions { WriteIndented = true });
             }
 
@@ -47,6 +48,7 @@ internal sealed class TemplateDryRunTool
 
         if (parseError != null)
         {
+            McpTelemetry.RecordError(activity, "template_dry_run", parseError);
             return JsonSerializer.Serialize(new
             {
                 error = parseError,
@@ -68,6 +70,7 @@ internal sealed class TemplateDryRunTool
         var validationErrors = TemplateEngineService.ValidateParameters(template, parameters);
         if (validationErrors.Count > 0)
         {
+            McpTelemetry.RecordError(activity, "template_dry_run", "Parameter validation failed");
             return JsonSerializer.Serialize(new
             {
                 error = "Parameter validation failed.",

@@ -195,9 +195,15 @@ internal sealed class SolutionAnalyzeTool
             {
                 try
                 {
-                    var content = File.ReadAllText(propsFile);
-                    if (content.Contains("ManagePackageVersionsCentrally", StringComparison.OrdinalIgnoreCase) &&
-                        content.Contains("true", StringComparison.OrdinalIgnoreCase))
+                    // Parse the actual property value rather than substring-matching the file text
+                    // (which false-positives on comments or unrelated "true" occurrences).
+                    var doc = XDocument.Load(propsFile);
+                    var enabled = doc.Descendants()
+                        .Where(e => e.Name.LocalName.Equals("ManagePackageVersionsCentrally", StringComparison.OrdinalIgnoreCase))
+                        .Select(e => e.Value.Trim())
+                        .Any(v => v.Equals("true", StringComparison.OrdinalIgnoreCase));
+
+                    if (enabled)
                     {
                         return (true, propsFile);
                     }

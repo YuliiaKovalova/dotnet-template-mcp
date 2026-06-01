@@ -46,6 +46,7 @@ internal sealed class TemplateValidateTool
             }
             catch (Exception ex)
             {
+                McpTelemetry.RecordError(activity, "template_validate", $"Failed to read template.json: {ex.Message}");
                 return JsonSerializer.Serialize(new { error = $"Failed to read template.json: {ex.Message}" }, SerializerOptions);
             }
 
@@ -56,6 +57,7 @@ internal sealed class TemplateValidateTool
             }
             catch (JsonException ex)
             {
+                McpTelemetry.RecordError(activity, "template_validate", "Invalid JSON in template.json");
                 return JsonSerializer.Serialize(new
                 {
                     error = "Invalid JSON in template.json",
@@ -66,6 +68,7 @@ internal sealed class TemplateValidateTool
 
             if (root is not JsonObject obj)
             {
+                McpTelemetry.RecordError(activity, "template_validate", "template.json root must be a JSON object");
                 return JsonSerializer.Serialize(new { error = "template.json root must be a JSON object." }, SerializerOptions);
             }
 
@@ -86,11 +89,24 @@ internal sealed class TemplateValidateTool
             {
                 valid = result.Errors.Count == 0,
                 templatePath = templateJsonPath,
-                identity = obj["identity"]?.GetValue<string>(),
+                identity = (obj["identity"] as JsonValue)?.GetValueKind() == System.Text.Json.JsonValueKind.String
+                    ? obj["identity"]!.GetValue<string>()
+                    : null,
                 summary = $"{result.Errors.Count} error(s), {result.Warnings.Count} warning(s), {result.Suggestions.Count} suggestion(s)",
                 errors = result.Errors,
                 warnings = result.Warnings,
                 suggestions = result.Suggestions,
+            }, SerializerOptions);
+        }
+        catch (Exception ex)
+        {
+            // A validator must never crash on malformed input — surface it as a friendly error.
+            McpTelemetry.RecordError(activity, "template_validate", ex.Message);
+            return JsonSerializer.Serialize(new
+            {
+                error = "Failed to validate template.json.",
+                details = ex.Message,
+                hint = "Ensure template.json is well-formed and that fields like 'identity', 'shortName', and symbol values use the expected types.",
             }, SerializerOptions);
         }
         finally

@@ -87,7 +87,7 @@ internal sealed class ClassificationBasedIntentResolver : IIntentResolver
                 }
             }
 
-            var (score, reasons) = ScoreTemplate(template, intent, candidateShortNames, candidateClassifications, resolvedParams);
+            var (score, reasons) = ScoreTemplate(template, keywords, candidateShortNames, candidateClassifications, resolvedParams);
             if (score > 0)
             {
                 scored.Add((template, score, reasons));
@@ -127,7 +127,7 @@ internal sealed class ClassificationBasedIntentResolver : IIntentResolver
 
     private static (double Score, List<string> Reasons) ScoreTemplate(
         ITemplateInfo template,
-        string intent,
+        IReadOnlyList<string> keywords,
         IReadOnlySet<string> candidateShortNames,
         IReadOnlySet<string> candidateClassifications,
         IReadOnlyDictionary<string, string> resolvedParams)
@@ -161,18 +161,20 @@ internal sealed class ClassificationBasedIntentResolver : IIntentResolver
 
         score += Math.Min(classScore, 0.4);
 
-        // 3. Name/description direct match (0.15)
-        var normalized = intent.ToLowerInvariant();
-        if (template.Name.Contains(intent, StringComparison.OrdinalIgnoreCase) ||
-            intent.Contains(template.Name, StringComparison.OrdinalIgnoreCase))
+        // 3. Name/description match against extracted keywords (matching the full intent
+        // sentence never matches for multi-word intents like "web api with auth").
+        if (keywords.Any(k => k.Length >= 3 &&
+            template.Name.Contains(k, StringComparison.OrdinalIgnoreCase)))
         {
             score += 0.15;
-            reasons.Add($"Name '{template.Name}' matches intent");
+            reasons.Add($"Name '{template.Name}' matches intent keywords");
         }
-        else if (template.Description?.Contains(intent, StringComparison.OrdinalIgnoreCase) == true)
+        else if (template.Description != null &&
+            keywords.Any(k => k.Length >= 3 &&
+                template.Description.Contains(k, StringComparison.OrdinalIgnoreCase)))
         {
             score += 0.1;
-            reasons.Add("Description contains intent text");
+            reasons.Add("Description matches intent keywords");
         }
 
         // 4. Parameter applicability (0.05 per matching param, max 0.2)
@@ -192,11 +194,12 @@ internal sealed class ClassificationBasedIntentResolver : IIntentResolver
             reasons.Add($"Supports {(int)(paramScore / 0.05)} of the requested parameters");
         }
 
-        // 5. Identity match fallback (0.3)
-        if (template.Identity.Contains(normalized, StringComparison.OrdinalIgnoreCase))
+        // 5. Identity match fallback against keywords (0.3)
+        if (keywords.Any(k => k.Length >= 3 &&
+            template.Identity.Contains(k, StringComparison.OrdinalIgnoreCase)))
         {
             score += 0.3;
-            reasons.Add($"Identity '{template.Identity}' contains intent text");
+            reasons.Add($"Identity '{template.Identity}' matches intent keywords");
         }
 
         return (score, reasons);

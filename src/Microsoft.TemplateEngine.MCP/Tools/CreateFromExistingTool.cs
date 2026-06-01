@@ -104,11 +104,13 @@ internal sealed class CreateFromExistingTool
                     }
                     else
                     {
+                        McpTelemetry.RecordError(activity, "template_create_from_existing", $"Installation failed: {result?.ErrorMessage ?? "Unknown error"}");
                         installMessage = $"Template generated but installation failed: {result?.ErrorMessage ?? "Unknown error"}. You can install manually with 'dotnet new install {templateRoot}'.";
                     }
                 }
                 catch (Exception ex)
                 {
+                    McpTelemetry.RecordError(activity, "template_create_from_existing", ex.Message);
                     installMessage = $"Template generated but installation failed: {ex.Message}. You can install manually with 'dotnet new install {templateRoot}'.";
                 }
             }
