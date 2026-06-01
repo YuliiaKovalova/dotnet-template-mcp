@@ -246,6 +246,17 @@ Given a template and partial parameter values, suggest reasonable defaults with 
 
 ---
 
+## `packages_upgrade`
+
+Scan a `.csproj`, `.sln`/`.slnx`, or directory for outdated NuGet packages and report (or apply) upgrades to the latest stable version. CPM-aware: when a `Directory.Packages.props` is found, it reads and updates the `PackageVersion` entries there; otherwise it updates inline `PackageReference` versions. Floating versions (`1.*`), version ranges, and MSBuild-property versions (`$(Foo)`) are left untouched, and it never downgrades.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | No | Path to a `.csproj`, `.sln`/`.slnx`, or directory. Defaults to the current directory |
+| `apply` | bool | No | When `true`, writes upgrades to disk. Defaults to `false` (report only) |
+
+---
+
 ## MCP Prompts
 
 ### `create_project`
