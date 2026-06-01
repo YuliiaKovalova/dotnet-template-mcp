@@ -90,6 +90,7 @@ internal sealed class Program
         services.AddSingleton<TemplateEngineService>();
         services.AddSingleton<TemplateEngineFacade>();
         services.AddSingleton<PostCreationProcessor>();
+        services.AddSingleton<PackageUpgradeService>();
     }
 
     private static void ConfigureMcpServer(ModelContextProtocol.Server.McpServerOptions options)
@@ -97,7 +98,7 @@ internal sealed class Program
         options.ServerInfo = new()
         {
             Name = "Microsoft.TemplateEngine.MCP",
-            Version = "1.3.0"
+            Version = "1.4.0"
         };
     }
 }

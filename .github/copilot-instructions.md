@@ -13,6 +13,10 @@ When the user asks about their solution or project structure:
 
 - Use `solution_analyze` to inspect solution structure, target frameworks, CPM status, and NuGet config.
 
+When the user wants to update or upgrade NuGet package versions:
+
+- Use `packages_upgrade` to scan a project, solution, or directory for outdated `PackageReference`/`PackageVersion` entries and report (or apply) upgrades to the latest stable versions. It is CPM-aware (updates `Directory.Packages.props`), defaults to a report-only preview, and only writes changes when called with `apply=true`.
+
 When the user is authoring, reviewing, or debugging a custom dotnet template:
 
 - Use `template_validate` to check template.json for errors BEFORE publishing or testing. It catches missing required fields, invalid parameters, choice conflicts, constraint issues, and common authoring mistakes.
