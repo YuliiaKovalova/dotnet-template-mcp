@@ -38,6 +38,7 @@ internal sealed class TemplateListTool
         {
             filtered = filtered.Where(t =>
                 t.TagsCollection.TryGetValue("language", out string? lang) &&
+                lang is not null &&
                 lang.Contains(language, StringComparison.OrdinalIgnoreCase));
         }
 
@@ -45,6 +46,7 @@ internal sealed class TemplateListTool
         {
             filtered = filtered.Where(t =>
                 t.TagsCollection.TryGetValue("type", out string? templateType) &&
+                templateType is not null &&
                 templateType.Contains(type, StringComparison.OrdinalIgnoreCase));
         }
 

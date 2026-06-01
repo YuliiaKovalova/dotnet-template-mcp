@@ -77,19 +77,39 @@ internal static class TemplateGenerator
 
         // Add symbols for parameterizable properties
         var symbols = new Dictionary<string, object>();
+        var usedReplaceValues = new HashSet<string>(StringComparer.Ordinal);
         foreach (var prop in analysis.Properties)
         {
-            if (IsParameterizableProperty(prop.Name))
+            if (!IsParameterizableProperty(prop.Name) || symbols.ContainsKey(prop.Name))
             {
-                symbols[prop.Name] = new Dictionary<string, object>
-                {
-                    ["type"] = "parameter",
-                    ["datatype"] = InferDataType(prop),
-                    ["defaultValue"] = prop.Value,
-                    ["description"] = $"{prop.Name} (from source project)",
-                    ["replaces"] = prop.Value,
-                };
+                continue;
             }
+
+            var datatype = InferDataType(prop);
+            var symbol = new Dictionary<string, object>
+            {
+                ["type"] = "parameter",
+                ["datatype"] = datatype,
+                ["defaultValue"] = prop.Value,
+                ["description"] = $"{prop.Name} (from source project)",
+            };
+
+            // A choice symbol is invalid without a choices list — emit the known domain
+            // plus the project's actual value so the default is always valid.
+            if (datatype == "choice")
+            {
+                symbol["choices"] = BuildChoices(prop);
+            }
+
+            // Only wire up token replacement when the value is safe: non-empty and not already
+            // claimed by another parameter. Sharing a replace value (e.g. two properties set to
+            // "enable") produces ambiguous, overlapping substitutions in the generated .csproj.
+            if (!string.IsNullOrEmpty(prop.Value) && usedReplaceValues.Add(prop.Value))
+            {
+                symbol["replaces"] = prop.Value;
+            }
+
+            symbols[prop.Name] = symbol;
         }
 
         if (symbols.Count > 0)
@@ -374,6 +394,31 @@ internal static class TemplateGenerator
         }
 
         return "string";
+    }
+
+    /// <summary>
+    /// Build the choices array for a choice-typed property. Includes the known value domain
+    /// for the property plus the project's actual value (so the default is always valid).
+    /// </summary>
+    private static object BuildChoices(ProjectProperty prop)
+    {
+        IEnumerable<string> domain = prop.Name.ToLowerInvariant() switch
+        {
+            "nullable" => new[] { "enable", "disable", "warnings", "annotations" },
+            "implicitusings" => new[] { "enable", "disable" },
+            _ => Array.Empty<string>(),
+        };
+
+        var choices = new List<string>(domain);
+        if (!string.IsNullOrEmpty(prop.Value) &&
+            !choices.Any(c => c.Equals(prop.Value, StringComparison.OrdinalIgnoreCase)))
+        {
+            choices.Add(prop.Value);
+        }
+
+        return choices
+            .Select(c => new Dictionary<string, object> { ["choice"] = c })
+            .ToArray();
     }
 
     private static string EscapeXml(string value)
