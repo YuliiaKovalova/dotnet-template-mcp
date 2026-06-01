@@ -90,6 +90,7 @@ internal sealed class Program
         services.AddSingleton<TemplateEngineService>();
         services.AddSingleton<TemplateEngineFacade>();
         services.AddSingleton<PostCreationProcessor>();
+        services.AddSingleton<PackageUpgradeService>();
     }
 
     private static void ConfigureMcpServer(ModelContextProtocol.Server.McpServerOptions options)

@@ -66,6 +66,7 @@ No existing tooling does this — most template authors discover issues only aft
 | `template_validate` | Validate a local template directory for authoring issues before publishing |
 | `template_compare` | Compare 2+ templates side by side — parameters, features, frameworks |
 | `solution_analyze` | Analyze a solution/workspace — project structure, frameworks, CPM status |
+| `packages_upgrade` | Scan a project/solution/folder for outdated NuGet versions and report or apply upgrades (CPM-aware) |
 
 📖 [Full tool reference →](docs/tool-reference.md)
 
@@ -208,11 +209,11 @@ Chain multiple templates in one call with `template_compose`:
 
 ### Tool Profiles (Lite vs Full)
 
-By default, all 14 tools are available. If your agent works better with fewer tools, set the `MCP_TEMPLATE_TOOL_PROFILE` environment variable:
+By default, all 15 tools are available. If your agent works better with fewer tools, set the `MCP_TEMPLATE_TOOL_PROFILE` environment variable:
 
 | Profile | Tools | When to use |
 |---------|-------|-------------|
-| `full` (default) | All 14 tools | Full control — advanced workflows, composition, custom templates |
+| `full` (default) | All 15 tools | Full control — advanced workflows, composition, custom templates |
 | `lite` | 5 core tools | Simpler agents that just need to find and create projects |
 
 **Lite profile tools:** `template_from_intent`, `template_instantiate`, `template_inspect`, `template_search`, `template_dry_run`
