@@ -110,7 +110,7 @@ internal sealed class PostCreationProcessor
                 var latestVersion = await NuGetVersionResolver.GetLatestStableVersionAsync(name, cancellationToken)
                     .ConfigureAwait(false);
 
-                if (latestVersion != null && latestVersion != currentVersion)
+                if (latestVersion != null && IsNewerVersion(latestVersion, currentVersion))
                 {
                     fileResult.VersionUpgrades.Add(new VersionUpgrade(name, currentVersion, latestVersion));
                     _logger.LogInformation("Upgrade available: {Package} {Old} → {New}", name, currentVersion, latestVersion);
@@ -251,6 +251,22 @@ internal sealed class PostCreationProcessor
         }
 
         return fileResult;
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="candidate"/> is a strictly newer version than
+    /// <paramref name="current"/>. Uses SemVer ordering, falling back to ordinal inequality
+    /// when either value isn't a valid NuGet version (never downgrades on parse failure).
+    /// </summary>
+    internal static bool IsNewerVersion(string candidate, string current)
+    {
+        if (NuGet.Versioning.NuGetVersion.TryParse(candidate, out var c) &&
+            NuGet.Versioning.NuGetVersion.TryParse(current, out var cur))
+        {
+            return c > cur;
+        }
+
+        return !candidate.Equals(current, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

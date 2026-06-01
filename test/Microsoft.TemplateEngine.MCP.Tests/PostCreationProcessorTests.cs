@@ -35,6 +35,16 @@ public class PostCreationProcessorTests : IDisposable
 
     // ── CPM Detection ──
 
+    [Theory]
+    [InlineData("4.2.0", "3.1.0", true)]   // newer
+    [InlineData("3.1.0", "3.1.0", false)]  // equal
+    [InlineData("3.0.0", "4.2.0", false)]  // older — must NOT be treated as an upgrade (no downgrade)
+    [InlineData("1.0", "1.0.0", false)]    // semantically equal despite different string form
+    public void IsNewerVersion_ComparesSemantically(string candidate, string current, bool expected)
+    {
+        Assert.Equal(expected, PostCreationProcessor.IsNewerVersion(candidate, current));
+    }
+
     [Fact]
     public void FindDirectoryPackagesProps_Found_ReturnsPath()
     {

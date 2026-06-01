@@ -156,7 +156,7 @@ internal class TemplateEngineFacade
                 if (frameworkParam?.Choices != null)
                 {
                     var bestFramework = frameworkParam.Choices.Keys
-                        .OrderByDescending(k => k)
+                        .OrderByDescending(k => TemplateEngineService.ParseFrameworkVersion(k))
                         .FirstOrDefault();
                     if (bestFramework != null)
                     {

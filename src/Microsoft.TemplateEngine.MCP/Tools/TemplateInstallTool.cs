@@ -40,7 +40,7 @@ internal sealed class TemplateInstallTool
             var existingVersion = existingPackage.Version;
 
             // Same version requested (or no version specified) — skip
-            if (version == null || (existingVersion != null && existingVersion.Equals(version, StringComparison.OrdinalIgnoreCase)))
+            if (version == null || (existingVersion != null && VersionsEqual(existingVersion, version)))
             {
                 var templates = await GetTemplatesForPackageAsync(engineService, packageId, cancellationToken).ConfigureAwait(false);
                 return JsonSerializer.Serialize(new
@@ -106,6 +106,21 @@ internal sealed class TemplateInstallTool
         {
             McpTelemetry.RecordDuration("template_install", sw.Elapsed.TotalMilliseconds);
         }
+    }
+
+    /// <summary>
+    /// Compare two NuGet version strings semantically (so "1.0" == "1.0.0" and build metadata is ignored),
+    /// falling back to an ordinal comparison for values that aren't valid NuGet versions.
+    /// </summary>
+    private static bool VersionsEqual(string a, string b)
+    {
+        if (NuGet.Versioning.NuGetVersion.TryParse(a, out var va) &&
+            NuGet.Versioning.NuGetVersion.TryParse(b, out var vb))
+        {
+            return va.Equals(vb);
+        }
+
+        return a.Equals(b, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<List<object>> GetTemplatesForPackageAsync(

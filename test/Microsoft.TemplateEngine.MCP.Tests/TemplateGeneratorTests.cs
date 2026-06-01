@@ -267,6 +267,47 @@ public class TemplateGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void BuildTemplateJson_ChoiceSymbol_IncludesChoicesList()
+    {
+        // Regression: choice-typed symbols (Nullable/ImplicitUsings) were emitted without a
+        // "choices" array, producing template.json that the project's own validator rejects.
+        var analysis = CreateAnalysis(properties: new List<ProjectProperty>
+        {
+            new() { Name = "Nullable", Value = "enable" },
+        });
+
+        var json = TemplateGenerator.BuildTemplateJson(analysis, "Test", "test");
+        var doc = JsonDocument.Parse(json);
+        var nullable = doc.RootElement.GetProperty("symbols").GetProperty("Nullable");
+
+        Assert.Equal("choice", nullable.GetProperty("datatype").GetString());
+        Assert.True(nullable.TryGetProperty("choices", out var choices));
+        var choiceValues = choices.EnumerateArray().Select(c => c.GetProperty("choice").GetString()).ToList();
+        Assert.Contains("enable", choiceValues);
+        Assert.Contains("disable", choiceValues);
+    }
+
+    [Fact]
+    public void BuildTemplateJson_DuplicateReplaceValues_OnlyAppliesReplaceOnce()
+    {
+        // Regression: two properties sharing a value (e.g. both "enable") both set
+        // replaces:"enable", producing ambiguous, overlapping substitutions.
+        var analysis = CreateAnalysis(properties: new List<ProjectProperty>
+        {
+            new() { Name = "Nullable", Value = "enable" },
+            new() { Name = "ImplicitUsings", Value = "enable" },
+        });
+
+        var json = TemplateGenerator.BuildTemplateJson(analysis, "Test", "test");
+        var doc = JsonDocument.Parse(json);
+        var symbols = doc.RootElement.GetProperty("symbols");
+
+        var replaceCount = symbols.EnumerateObject()
+            .Count(s => s.Value.TryGetProperty("replaces", out var r) && r.GetString() == "enable");
+        Assert.Equal(1, replaceCount);
+    }
+
+    [Fact]
     public void BuildTemplateJson_TestProject_ClassifiedAsTest()
     {
         var analysis = CreateAnalysis(

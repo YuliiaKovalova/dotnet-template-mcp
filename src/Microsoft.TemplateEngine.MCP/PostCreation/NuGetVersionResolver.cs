@@ -57,21 +57,27 @@ internal static class NuGetVersionResolver
                 return null;
             }
 
-            // versions array is sorted ascending — find last stable version
-            string? latestStable = null;
+            // Pick the highest stable version using proper SemVer ordering
+            // (don't rely on the array being pre-sorted).
+            NuGet.Versioning.NuGetVersion? latestStable = null;
             foreach (var version in versionsElement.EnumerateArray())
             {
                 var versionStr = version.GetString();
-                if (versionStr != null && IsStableVersion(versionStr))
+                if (versionStr != null &&
+                    NuGet.Versioning.NuGetVersion.TryParse(versionStr, out var parsed) &&
+                    !parsed.IsPrerelease &&
+                    (latestStable == null || parsed > latestStable))
                 {
-                    latestStable = versionStr;
+                    latestStable = parsed;
                 }
             }
 
-            // Cache the result (even null, to avoid repeated failed lookups)
-            Cache[packageId] = new CacheEntry(latestStable, DateTime.UtcNow + CacheTtl);
+            var latestStableStr = latestStable?.ToNormalizedString();
 
-            return latestStable;
+            // Cache the result (even null, to avoid repeated failed lookups)
+            Cache[packageId] = new CacheEntry(latestStableStr, DateTime.UtcNow + CacheTtl);
+
+            return latestStableStr;
         }
         catch (Exception)
         {

@@ -43,6 +43,22 @@ public class TemplateEngineFacadeTests
     }
 
     [Fact]
+    public void GetParameterSuggestions_AuthSet_PicksNet10OverNet9()
+    {
+        // Regression: the auth-path framework suggestion previously sorted lexicographically,
+        // wrongly picking net9.0 over net10.0.
+        var template = CreateTemplateWithParams(
+            ("auth", "choice", new[] { "None", "Individual" }),
+            ("Framework", "choice", new[] { "net8.0", "net9.0", "net10.0" }));
+        var userParams = new Dictionary<string, string?> { { "auth", "Individual" } };
+
+        var suggestions = TemplateEngineFacade.GetParameterSuggestions(template, userParams);
+
+        var frameworkSuggestion = Assert.Single(suggestions, s => s.ParameterName == "Framework");
+        Assert.Equal("net10.0", frameworkSuggestion.SuggestedValue);
+    }
+
+    [Fact]
     public void GetParameterSuggestions_AuthSet_SuggestsNoHttpsFalseWithRationale()
     {
         var template = CreateTemplateWithParams(

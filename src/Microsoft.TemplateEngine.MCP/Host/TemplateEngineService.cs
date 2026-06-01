@@ -89,6 +89,7 @@ internal class TemplateEngineService : IDisposable
             {
                 _logger.LogInformation("Installing {Count} SDK template package(s)...", toInstall.Count);
                 var results = await _bootstrapper.InstallTemplatePackagesAsync(toInstall, cancellationToken: cancellationToken).ConfigureAwait(false);
+                bool allSucceeded = true;
                 foreach (var result in results)
                 {
                     if (result.Success)
@@ -97,13 +98,19 @@ internal class TemplateEngineService : IDisposable
                     }
                     else
                     {
+                        allSucceeded = false;
                         _logger.LogWarning("Failed to install {Package}: {Error}", result.InstallRequest.PackageIdentifier, result.ErrorMessage);
                     }
                 }
-            }
 
-            // Only mark as installed on success — allows retry on failure
-            _sdkTemplatesInstalled = true;
+                // Only cache success when every install succeeded — otherwise allow retry on the next call.
+                _sdkTemplatesInstalled = allSucceeded;
+            }
+            else
+            {
+                // Nothing needed installing — everything is already present.
+                _sdkTemplatesInstalled = true;
+            }
         }
         catch (Exception ex)
         {
@@ -302,6 +309,7 @@ internal class TemplateEngineService : IDisposable
                 {
                     matches = matches.Where(t =>
                         t.TagsCollection.TryGetValue("language", out string? lang) &&
+                        lang is not null &&
                         lang.Contains(language, StringComparison.OrdinalIgnoreCase));
                 }
 
@@ -309,6 +317,7 @@ internal class TemplateEngineService : IDisposable
                 {
                     matches = matches.Where(t =>
                         t.TagsCollection.TryGetValue("type", out string? templateType) &&
+                        templateType is not null &&
                         templateType.Contains(type, StringComparison.OrdinalIgnoreCase));
                 }
 
@@ -565,6 +574,7 @@ internal class TemplateEngineService : IDisposable
     public void Dispose()
     {
         _bootstrapper.Dispose();
+        _sdkInstallSemaphore.Dispose();
     }
 
     /// <summary>
