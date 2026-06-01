@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-06-01
+
+### Added
+- **`packages_upgrade` tool** — scan a `.csproj`, `.sln`/`.slnx`, or directory for outdated NuGet packages and report (default) or apply (`apply=true`) upgrades to the latest stable version. CPM-aware: updates `Directory.Packages.props` `PackageVersion` entries for packages actually referenced by the scanned projects, otherwise rewrites inline `PackageReference` versions. Skips floating/range/MSBuild-property versions and never downgrades. Brings the tool count to 15.
+- **Persistent NuGet version cache** — `NuGetVersionResolver` now keeps a best-effort, bounded on-disk cache (one JSON file per package under `LocalApplicationData`, atomic temp+move writes, pruned to 1000 entries) that survives restarts, plus a `User-Agent` header and separate success (30 min) vs failure (1 min) cache TTLs. HTTP timeouts are treated as transient failures rather than caller cancellation.
+
+### Fixed
+- **Framework version sorting (auth path)** — `TemplateEngineFacade` parameter suggestions sorted frameworks lexicographically, picking `net9.0` over `net10.0`. Now uses numeric version parsing.
+- **Choice symbol generation** — `template_create_from_existing` now emits a `choices` array for choice parameters and de-duplicates `replaces` values and property names.
+- **NuGet latest-version selection** — `NuGetVersionResolver` now picks the highest stable version via SemVer ordering instead of trusting array order, and never registers a downgrade.
+- **SDK install caching** — only caches success when all installs succeed; disposes the bootstrap semaphore; null-guards `lang`/`templateType` tags during NuGet search.
+- **Tool robustness** — added null guards before `.Contains` on tag values, SemVer-based version equality in `template_install`, error telemetry on `template_dry_run`/`template_validate`/`template_create_from_existing` failure paths, a crash guard in `template_validate`, and XML-based (not substring) CPM detection in `solution_analyze`.
+
+### Changed
+- **Intent scoring** — `ClassificationBasedIntentResolver` now matches template name/identity/description against extracted keywords instead of the full intent sentence, improving ranking precision.
+
 ## [1.3.0] - 2026-03-31
 
 ### Added
