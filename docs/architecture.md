@@ -74,6 +74,17 @@ After template instantiation, the server automatically adapts the output to the 
 - In standalone mode, versions are updated directly in `.csproj`
 - Controlled via `resolveLatestVersions` parameter (default: `true`)
 
+**Standalone Package Upgrades:**
+- `packages_upgrade` scans an existing `.csproj`, `.sln`/`.slnx`, or directory (independent of template creation) for outdated NuGet versions
+- CPM-aware: upgrades `Directory.Packages.props` `PackageVersion` entries for packages actually referenced by the scanned projects; otherwise rewrites inline `PackageReference` versions
+- Skips floating (`1.*`), range, and MSBuild-property (`$(Foo)`) versions, and never downgrades
+- Report-only by default; pass `apply=true` to write changes (whitespace-preserving XML edits)
+- Backed by `PackageUpgradeService` (MCP-free, unit-tested) reusing the shared `NuGetVersionResolver`
+
+**NuGet Version Cache:**
+- `NuGetVersionResolver` caches lookups in two tiers: in-memory for the process, and a best-effort, bounded on-disk cache under `LocalApplicationData` that survives restarts
+- Separate TTLs for successes (30 min) and failures (1 min); HTTP timeouts are treated as transient failures
+
 **Multi-Template Composition:**
 - `template_compose` executes a sequence of template operations in order
 - First step creates the project; subsequent steps add items relative to it
@@ -112,13 +123,13 @@ dotnet-template-mcp/
 │   ├── Analysis/                          # Project analyzer + template generator
 │   ├── Host/                             # Template engine host + service + facade
 │   ├── Intent/                           # Phase 2: intent resolution
-│   ├── PostCreation/                     # Phase 3: CPM adaptation + NuGet version resolution
+│   ├── PostCreation/                     # Phase 3: CPM adaptation + NuGet version resolution + package upgrades
 │   ├── Prompts/                          # MCP prompts
 │   ├── Telemetry/                        # ActivitySource + Meter
-│   ├── Tools/                            # MCP tools (12 tools)
+│   ├── Tools/                            # MCP tools (15 tools)
 │   ├── McpFeatureFlags.cs                # Feature toggles
 │   └── Program.cs                        # Entry point
-├── test/Microsoft.TemplateEngine.MCP.Tests/  # 170 tests
+├── test/Microsoft.TemplateEngine.MCP.Tests/  # 207 tests
 ├── docs/
 │   ├── architecture.md                   # This file
 │   ├── configuration.md                  # MCP client setup + troubleshooting
