@@ -37,6 +37,10 @@ jobs:
       - name: Push to NuGet
         run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
+      - name: Resolve package version
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -46,13 +50,13 @@ jobs:
             ## Install
 
             ```bash
-            dotnet tool install --global DotnetTemplateMCP --version ${{ github.ref_name }}
+            dotnet tool install --global DotnetTemplateMCP --version ${{ steps.version.outputs.value }}
             ```
 
             Or zero-install with `dnx` (.NET 10+):
 
             ```bash
-            dnx -y DotnetTemplateMCP --version ${{ github.ref_name }}
+            dnx -y DotnetTemplateMCP --version ${{ steps.version.outputs.value }}
             ```
 
             See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
