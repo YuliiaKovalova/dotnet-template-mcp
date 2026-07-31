@@ -12,8 +12,8 @@
     <PackageVersion Include="Microsoft.TemplateSearch.Common" Version="10.0.103" />
 
     <!-- MCP SDK -->
-    <PackageVersion Include="ModelContextProtocol" Version="1.4.1" />
-    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="1.4.1" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.0.0" />
+    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.0.0" />
 
     <!-- Hosting -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
