@@ -113,12 +113,12 @@ After template instantiation, the server automatically adapts the output to the 
 
 Instrumented via `System.Diagnostics` (OpenTelemetry-compatible):
 
-- **ActivitySource** `Microsoft.TemplateEngine.MCP` — spans for every tool call
+- **ActivitySource** `DotnetTemplateMcp` — spans for every tool call
 - **Meter** — counters for invocations, errors, templates created, packages installed, auto-resolves, validation failures, smart defaults, intent resolutions
 - **Histogram** — tool duration in milliseconds
 
 ```bash
-dotnet-counters monitor --process-id <PID> Microsoft.TemplateEngine.MCP
+dotnet-counters monitor --process-id <PID> DotnetTemplateMcp
 ```
 
 ## Feature Flags
@@ -140,7 +140,7 @@ Set to `false`, `0`, `no`, or `off` to disable.
 
 ```
 dotnet-template-mcp/
-├── src/Microsoft.TemplateEngine.MCP/
+├── src/DotnetTemplateMcp/
 │   ├── Analysis/                          # Project analyzer + template generator
 │   ├── Host/                             # Template engine host + service + facade
 │   ├── Intent/                           # Phase 2: intent resolution
@@ -150,7 +150,7 @@ dotnet-template-mcp/
 │   ├── Tools/                            # MCP tools (15 tools)
 │   ├── McpFeatureFlags.cs                # Feature toggles
 │   └── Program.cs                        # Entry point
-├── test/Microsoft.TemplateEngine.MCP.Tests/  # 207 tests
+├── test/DotnetTemplateMcp.Tests/  # 207 tests
 ├── docs/
 │   ├── architecture.md                   # This file
 │   ├── configuration.md                  # MCP client setup + troubleshooting
@@ -160,5 +160,5 @@ dotnet-template-mcp/
 ├── .github/
 │   ├── workflows/ci.yml                  # CI pipeline
 │   └── copilot-instructions.md           # Copilot tool routing
-└── Microsoft.TemplateEngine.MCP.sln
+└── DotnetTemplateMcp.sln
 ```

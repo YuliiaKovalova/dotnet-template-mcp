@@ -1,4 +1,4 @@
-# Microsoft.TemplateEngine.MCP
+# DotnetTemplateMCP
 
 <!-- mcp-name: io.github.YuliiaKovalova/dotnet-template-mcp -->
 
@@ -288,7 +288,7 @@ dotnet build
 dotnet test
 
 # Pack locally
-dotnet pack src/Microsoft.TemplateEngine.MCP -o nupkg/
+dotnet pack src/DotnetTemplateMcp -o nupkg/
 ```
 
 ## Changelog
