@@ -106,6 +106,27 @@ internal static class McpTelemetry
             unit: "{parameters}",
             description: "Number of parameters collected via interactive elicitation");
 
+    /// <summary>Template post-actions executed after creation (restore, add-to-solution).</summary>
+    public static readonly Counter<long> PostActionsExecuted =
+        Meter.CreateCounter<long>(
+            "mcp.templates.post_actions_executed",
+            unit: "{actions}",
+            description: "Number of template post-actions executed after creation");
+
+    /// <summary>Write attempts rejected for resolving outside the workspace root.</summary>
+    public static readonly Counter<long> WorkspaceViolations =
+        Meter.CreateCounter<long>(
+            "mcp.security.workspace_violations",
+            unit: "{violations}",
+            description: "Number of tool calls rejected for targeting a path outside the workspace root");
+
+    /// <summary>HTTP requests rejected by the bearer-token check.</summary>
+    public static readonly Counter<long> UnauthorizedRequests =
+        Meter.CreateCounter<long>(
+            "mcp.security.unauthorized_requests",
+            unit: "{requests}",
+            description: "Number of HTTP requests rejected for missing or invalid credentials");
+
     // ── Histograms ──
 
     /// <summary>Duration of MCP tool invocations in milliseconds.</summary>
