@@ -42,15 +42,21 @@ Create a project or item from a template. **Writes files to disk.** Auto-resolve
 
 **Post-creation intelligence:**
 - **CPM (Central Package Management)** — detects `Directory.Packages.props` in the directory tree. If found, strips `Version` attributes from generated `.csproj` PackageReferences and adds `<PackageVersion>` entries to `Directory.Packages.props`.
-- **Latest NuGet versions** — queries the NuGet V3 API for the latest stable version of every package reference, replacing the template's hardcoded (often stale) versions. Set `resolveLatestVersions=false` to keep original versions.
+- **Post-actions** — runs the template's built-in restore (`dotnet restore`) and add-to-solution (`dotnet sln add`) post-actions, so you get the same finished state as `dotnet new`. Template-supplied scripts and process-start actions are **never** executed automatically; they are reported with their manual instructions instead. Disable with `runPostActions=false` or `MCP_TEMPLATE_POST_ACTIONS=false`.
+- **NuGet version reporting** — queries the feeds configured in your `NuGet.config` (private feeds, credentials, `packageSourceMapping` and proxies all honored) and **reports** newer stable versions without modifying the project. Pass `resolveLatestVersions=true` to apply them.
+
+> Auto-upgrading every `PackageReference` at creation time produces untested version combinations and overrides the template author's deliberate pinning, so it is opt-in. Set `MCP_TEMPLATE_RESOLVE_LATEST_VERSIONS=true` to restore the old apply-by-default behavior.
+
+**Path confinement:** `outputPath` must resolve inside the workspace root (`MCP_TEMPLATE_WORKSPACE_ROOT`, defaults to the process working directory). Paths outside it are rejected with `errorCode: path_outside_workspace`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `templateName` | string | Yes | Template identity or short name |
 | `name` | string | No | Project/item name |
-| `outputPath` | string | No | Output directory |
+| `outputPath` | string | No | Output directory (must be inside the workspace root) |
 | `parametersJson` | string | No | JSON object of parameter values |
-| `resolveLatestVersions` | bool | No | Resolve latest stable NuGet versions (default: true) |
+| `resolveLatestVersions` | bool | No | Apply latest stable NuGet versions. Default: report only |
+| `runPostActions` | bool | No | Run safe post-actions: restore + add-to-solution (default: true) |
 
 Example call:
 ```json

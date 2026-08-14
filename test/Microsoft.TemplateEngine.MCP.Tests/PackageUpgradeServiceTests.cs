@@ -30,7 +30,7 @@ public class PackageUpgradeServiceTests : IDisposable
     }
 
     private static PackageUpgradeService ServiceWith(IDictionary<string, string?> latest)
-        => new((name, _) => Task.FromResult(latest.TryGetValue(name, out var v) ? v : null));
+        => new((name, _, _) => Task.FromResult(latest.TryGetValue(name, out var v) ? v : null));
 
     [Fact]
     public async Task AnalyzeAsync_NonCpm_ReportsUpgradeWithoutWritingWhenNotApplied()

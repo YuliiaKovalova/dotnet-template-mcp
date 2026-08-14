@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.TemplateEngine.MCP.PostCreation;
+using Microsoft.TemplateEngine.MCP.Security;
 using ModelContextProtocol.Server;
 
 namespace Microsoft.TemplateEngine.MCP.Tools;
@@ -13,11 +14,11 @@ namespace Microsoft.TemplateEngine.MCP.Tools;
 internal sealed class PackagesUpgradeTool
 {
     [McpServerTool(Name = "packages_upgrade")]
-    [Description("Stop hand-editing stale NuGet versions. Scan a .csproj, .sln/.slnx, or directory for outdated PackageReference/PackageVersion entries and report (or apply) upgrades to the latest stable versions. CPM-aware: updates Directory.Packages.props when present. Reports only by default; pass apply=true to write changes.")]
+    [Description("Stop hand-editing stale NuGet versions. Scan a .csproj, .sln/.slnx, or directory for outdated PackageReference/PackageVersion entries and report (or apply) upgrades to the latest stable versions. Uses the feeds configured in the repository's NuGet.config. CPM-aware: updates Directory.Packages.props when present. Reports only by default; pass apply=true to write changes.")]
     public static async Task<string> UpgradePackagesAsync(
         PackageUpgradeService upgradeService,
         McpFeatureFlags featureFlags,
-        [Description("Path to a .csproj, .sln/.slnx file, or a directory to scan. For a solution or directory, all .csproj files beneath it are scanned. Defaults to the current directory.")] string? path = null,
+        [Description("Path to a .csproj, .sln/.slnx file, or a directory to scan. For a solution or directory, all .csproj files beneath it are scanned. Defaults to the workspace root.")] string? path = null,
         [Description("When true, writes the upgraded versions to disk. When false (default), only reports what would change.")] bool apply = false,
         CancellationToken cancellationToken = default)
     {
@@ -30,7 +31,19 @@ internal sealed class PackagesUpgradeTool
                 return ToolProfileResponse.DisabledMessage("packages_upgrade", "Set MCP_TEMPLATE_TOOL_PROFILE=full to upgrade NuGet packages.");
             }
 
-            var resolvedPath = path ?? Environment.CurrentDirectory;
+            var resolvedPath = path ?? featureFlags.WorkspaceRoot;
+
+            // Only guard the mutating mode — reporting on a path outside the workspace is harmless.
+            if (apply)
+            {
+                var rejection = WorkspaceGuard.Validate(resolvedPath, featureFlags);
+                if (rejection != null)
+                {
+                    McpTelemetry.RecordError(activity, "packages_upgrade", rejection);
+                    return WorkspaceGuard.PathRejectedError(rejection);
+                }
+            }
+
             if (!File.Exists(resolvedPath) && !Directory.Exists(resolvedPath))
             {
                 McpTelemetry.RecordError(activity, "packages_upgrade", "path not found");
@@ -89,7 +102,7 @@ internal sealed class PackagesUpgradeTool
             return JsonSerializer.Serialize(new
             {
                 error = $"Package upgrade failed: {ex.Message}",
-                hint = "Ensure the path points to valid project files and that network access to nuget.org is available.",
+                hint = "Ensure the path points to valid project files and that the feeds in your NuGet.config are reachable and authenticated.",
             }, SerializerOptions);
         }
         finally

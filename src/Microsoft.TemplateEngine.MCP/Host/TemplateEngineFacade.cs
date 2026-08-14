@@ -14,10 +14,17 @@ namespace Microsoft.TemplateEngine.MCP.Host;
 internal class TemplateEngineFacade
 {
     private readonly TemplateEngineService _engineService;
+    private readonly McpFeatureFlags _featureFlags;
 
     public TemplateEngineFacade(TemplateEngineService engineService)
+        : this(engineService, new McpFeatureFlags())
+    {
+    }
+
+    public TemplateEngineFacade(TemplateEngineService engineService, McpFeatureFlags featureFlags)
     {
         _engineService = engineService;
+        _featureFlags = featureFlags;
     }
 
     /// <summary>
@@ -286,7 +293,13 @@ internal class TemplateEngineFacade
 
         // 3. Create
         string resolvedOutputPath = outputPath ??
-            Path.Combine(Environment.CurrentDirectory, name ?? resolveResult.Template.DefaultName ?? "NewProject");
+            Path.Combine(_featureFlags.WorkspaceRoot, name ?? resolveResult.Template.DefaultName ?? "NewProject");
+
+        var rejection = Security.WorkspaceGuard.Validate(resolvedOutputPath, _featureFlags);
+        if (rejection != null)
+        {
+            return Security.WorkspaceGuard.PathRejectedError(rejection);
+        }
 
         var result = await _engineService.CreateAsync(
             resolveResult.Template, name, resolvedOutputPath,
@@ -387,7 +400,19 @@ internal class TemplateEngineFacade
             }
 
             string resolvedOutputPath = effectiveOutputPath ??
-                Path.Combine(Environment.CurrentDirectory, step.Name ?? resolveResult.Template.DefaultName ?? "NewProject");
+                Path.Combine(_featureFlags.WorkspaceRoot, step.Name ?? resolveResult.Template.DefaultName ?? "NewProject");
+
+            var stepRejection = Security.WorkspaceGuard.Validate(resolvedOutputPath, _featureFlags);
+            if (stepRejection != null)
+            {
+                stepResults.Add(new
+                {
+                    Step = i + 1,
+                    step.TemplateName,
+                    Error = stepRejection,
+                });
+                break;
+            }
 
             // Remember first project's output path for subsequent item templates
             if (i == 0)

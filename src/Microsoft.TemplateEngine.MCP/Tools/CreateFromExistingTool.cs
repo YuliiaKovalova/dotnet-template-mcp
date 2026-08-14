@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.TemplateEngine.MCP.Analysis;
+using Microsoft.TemplateEngine.MCP.Security;
 using ModelContextProtocol.Server;
 
 namespace Microsoft.TemplateEngine.MCP.Tools;
@@ -53,6 +54,14 @@ internal sealed class CreateFromExistingTool
 
             // 2. Generate the template
             var resolvedOutputPath = outputPath ?? Path.Combine(Path.GetDirectoryName(projectPath)!, "..", "templates");
+
+            var rejection = WorkspaceGuard.Validate(resolvedOutputPath, featureFlags);
+            if (rejection != null)
+            {
+                McpTelemetry.RecordError(activity, "template_create_from_existing", rejection);
+                return WorkspaceGuard.PathRejectedError(rejection);
+            }
+
             string templateRoot;
             try
             {

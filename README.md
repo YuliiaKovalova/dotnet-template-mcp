@@ -117,9 +117,23 @@ template-engine-mcp                     # stdio is the default
 template-engine-mcp --transport stdio   # explicit
 ```
 
-### HTTP (remote / cloud / team-shared)
+### HTTP (remote / team-shared)
 
-Streamable HTTP transport for remote, multi-tenant, or CI/CD deployment:
+Streamable HTTP transport for remote or CI/CD deployment.
+
+**Authentication is mandatory.** Every tool in this server writes files and installs NuGet packages, so an open endpoint is a remote code execution surface. The server refuses to start the HTTP transport unless you either set a token or explicitly opt in to anonymous access:
+
+```bash
+# Recommended
+MCP_TEMPLATE_HTTP_TOKEN=<shared-secret> template-engine-mcp --transport http
+
+# Only for a trusted, isolated network
+MCP_TEMPLATE_HTTP_ALLOW_ANONYMOUS=true template-engine-mcp --transport http
+```
+
+Clients authenticate with `Authorization: Bearer <shared-secret>`. Requests to `/mcp` are rate limited per client (default 120/minute, `MCP_TEMPLATE_HTTP_RATE_LIMIT=0` disables). `/health` stays anonymous for probes.
+
+> **Not multi-tenant.** `TemplateEngineService` is a process-wide singleton with `virtualizeSettings: false`, so the installed-template set is shared by every caller, and the workspace root is process-wide. Run one instance per trusted team or per tenant — do not expose a single instance to mutually untrusting users.
 
 ```bash
 template-engine-mcp --transport http
@@ -128,8 +142,8 @@ MCP_TEMPLATE_TRANSPORT=http template-engine-mcp
 ```
 
 The HTTP server exposes:
-- **`/mcp`** — MCP streamable HTTP endpoint
-- **`/health`** — Health check endpoint
+- **`/mcp`** — MCP streamable HTTP endpoint (bearer token required)
+- **`/health`** — Health check endpoint (anonymous)
 
 Configure the listen URL:
 ```bash

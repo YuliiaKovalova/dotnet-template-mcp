@@ -24,7 +24,16 @@ internal class TemplateEngineService : IDisposable
     private readonly EngineEnvironmentSettings _environmentSettings;
     private readonly ILogger _logger;
     private readonly SemaphoreSlim _sdkInstallSemaphore = new(1, 1);
+    private readonly SemaphoreSlim _templateCacheSemaphore = new(1, 1);
     private bool _sdkTemplatesInstalled;
+
+    /// <summary>
+    /// Memoized result of <see cref="GetTemplatesAsync"/>. The template set only changes when a
+    /// package is installed or uninstalled, so it is cached for the process lifetime and
+    /// explicitly invalidated by <see cref="InvalidateTemplateCache"/>. Without this, every tool
+    /// call paid the full enumeration cost behind the first-call SDK package scan.
+    /// </summary>
+    private IReadOnlyList<ITemplateInfo>? _templateCache;
 
     public TemplateEngineService(ILoggerFactory loggerFactory)
     {
@@ -231,8 +240,40 @@ internal class TemplateEngineService : IDisposable
 
     public virtual async Task<IReadOnlyList<ITemplateInfo>> GetTemplatesAsync(CancellationToken cancellationToken = default)
     {
-        await EnsureSdkTemplatesInstalledAsync(cancellationToken).ConfigureAwait(false);
-        return await _bootstrapper.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
+        var cached = _templateCache;
+        if (cached != null)
+        {
+            return cached;
+        }
+
+        await _templateCacheSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Double-check after acquiring the lock — a concurrent caller may have populated it.
+            cached = _templateCache;
+            if (cached != null)
+            {
+                return cached;
+            }
+
+            await EnsureSdkTemplatesInstalledAsync(cancellationToken).ConfigureAwait(false);
+            var templates = await _bootstrapper.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
+            _templateCache = templates;
+            return templates;
+        }
+        finally
+        {
+            _templateCacheSemaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// Drop the memoized template list. Must be called whenever the installed template set
+    /// changes, otherwise callers would keep observing a stale inventory.
+    /// </summary>
+    public virtual void InvalidateTemplateCache()
+    {
+        _templateCache = null;
     }
 
     public virtual async Task<ITemplateCreationResult> CreateAsync(
@@ -259,14 +300,18 @@ internal class TemplateEngineService : IDisposable
         IEnumerable<InstallRequest> installRequests,
         CancellationToken cancellationToken = default)
     {
-        return await _bootstrapper.InstallTemplatePackagesAsync(installRequests, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var results = await _bootstrapper.InstallTemplatePackagesAsync(installRequests, cancellationToken: cancellationToken).ConfigureAwait(false);
+        InvalidateTemplateCache();
+        return results;
     }
 
     public virtual async Task<IReadOnlyList<UninstallResult>> UninstallTemplatePackagesAsync(
         IEnumerable<IManagedTemplatePackage> packages,
         CancellationToken cancellationToken = default)
     {
-        return await _bootstrapper.UninstallTemplatePackagesAsync(packages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var results = await _bootstrapper.UninstallTemplatePackagesAsync(packages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        InvalidateTemplateCache();
+        return results;
     }
 
     public virtual async Task<IReadOnlyList<IManagedTemplatePackage>> GetManagedTemplatePackagesAsync(
@@ -575,6 +620,7 @@ internal class TemplateEngineService : IDisposable
     {
         _bootstrapper.Dispose();
         _sdkInstallSemaphore.Dispose();
+        _templateCacheSemaphore.Dispose();
     }
 
     /// <summary>

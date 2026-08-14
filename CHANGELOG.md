@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Post-action execution** — `template_instantiate` now runs the template's built-in restore (`dotnet restore`) and add-to-solution (`dotnet sln add`) post-actions, so created projects are restored and added to the solution instead of merely being described. Previously these were serialized as metadata and never executed, which made the tool strictly less capable than the `dotnet new` it told agents to prefer it over. Template-supplied script and process-start actions are **never** auto-executed — they are reported as skipped with their manual instructions. Controlled by `runPostActions` and `MCP_TEMPLATE_POST_ACTIONS`.
+- **`NuGet.config` support** — version resolution and `packages_upgrade` now resolve feeds through the `NuGet.config` chain that applies to the target directory, honoring private feeds, disabled sources, `packageSourceMapping`, credential providers and proxies. Previously `https://api.nuget.org/v3-flatcontainer/` was hardcoded, which silently wrote public nuget.org versions into repositories whose policy is an internal feed.
+- **Path confinement** — all caller-supplied write paths are validated against a workspace root (`MCP_TEMPLATE_WORKSPACE_ROOT`, default: the process working directory), with symlink resolution. Rejections return `errorCode: path_outside_workspace`. Disable with `MCP_TEMPLATE_WORKSPACE_ENFORCEMENT=false`.
+- **HTTP authentication and rate limiting** — the `/mcp` endpoint now requires a bearer token (`MCP_TEMPLATE_HTTP_TOKEN`) compared in constant time, and is rate limited per client (`MCP_TEMPLATE_HTTP_RATE_LIMIT`, default 120/min). The server **refuses to start** the HTTP transport unless a token is set or `MCP_TEMPLATE_HTTP_ALLOW_ANONYMOUS=true` is passed explicitly. `/health` remains anonymous.
+- **Template list caching** — `GetTemplatesAsync` is memoized for the process lifetime behind a double-checked lock and invalidated on install/uninstall. Nearly every tool calls it, and the first call sits behind the SDK nupkg scan.
+
+### Changed
+- **`resolveLatestVersions` now defaults to report-only** (was: apply). Rewriting every `PackageReference` to "latest stable" at creation produced untested version combinations and overrode the template author's deliberate pinning. Available upgrades are returned as `AvailableVersionUpgrades`; pass `resolveLatestVersions=true` or set `MCP_TEMPLATE_RESOLVE_LATEST_VERSIONS=true` to apply them.
+- **Removed the "multi-tenant" claim** from the README and HTTP transport docs. `TemplateEngineService` is a process-wide singleton with `virtualizeSettings: false` and the workspace root is process-wide, so concurrent tenants would share template install state and a working directory. Documented as one instance per trusted team.
+- **NuGet version cache keys** are now prefixed with a hash of the resolved feed scope, so a package id that resolves differently under different `NuGet.config` files cannot leak across repositories.
+
 ## [1.4.0] - 2026-06-01
 
 ### Added

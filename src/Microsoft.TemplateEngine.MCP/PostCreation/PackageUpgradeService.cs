@@ -16,20 +16,26 @@ namespace Microsoft.TemplateEngine.MCP.PostCreation;
 internal sealed class PackageUpgradeService
 {
     private readonly ILogger _logger;
-    private readonly Func<string, CancellationToken, Task<string?>> _resolveLatest;
+    private readonly Func<string, string, CancellationToken, Task<string?>> _resolveLatest;
 
     public PackageUpgradeService(ILoggerFactory loggerFactory)
-        : this(NuGetVersionResolver.GetLatestStableVersionAsync, loggerFactory.CreateLogger<PackageUpgradeService>())
+        : this(
+            null,
+            loggerFactory.CreateLogger<PackageUpgradeService>())
     {
     }
 
     /// <summary>Test seam: inject a deterministic version resolver to avoid network access.</summary>
     internal PackageUpgradeService(
-        Func<string, CancellationToken, Task<string?>> resolveLatest,
+        Func<string, string, CancellationToken, Task<string?>>? resolveLatest,
         ILogger? logger = null)
     {
-        _resolveLatest = resolveLatest;
         _logger = logger ?? NullLogger.Instance;
+
+        // The default resolver discovers NuGet.config from the directory being scanned, so private
+        // feeds and package source mapping apply to the repository actually being upgraded.
+        _resolveLatest = resolveLatest
+            ?? ((name, root, ct) => NuGetVersionResolver.GetLatestStableVersionAsync(name, root, _logger, ct));
     }
 
     /// <summary>
@@ -90,7 +96,7 @@ internal sealed class PackageUpgradeService
         foreach (var name in distinctNames)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            latestByName[name] = await _resolveLatest(name, cancellationToken).ConfigureAwait(false);
+            latestByName[name] = await _resolveLatest(name, scanRoot, cancellationToken).ConfigureAwait(false);
         }
 
         var modifiedDocs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

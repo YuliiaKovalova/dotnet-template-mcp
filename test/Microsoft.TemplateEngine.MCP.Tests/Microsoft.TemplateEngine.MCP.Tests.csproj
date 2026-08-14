@@ -20,4 +20,9 @@
     <ProjectReference Include="..\..\src\Microsoft.TemplateEngine.MCP\Microsoft.TemplateEngine.MCP.csproj" />
   </ItemGroup>
 
+  <!-- Needed to exercise the HTTP transport's auth middleware (DefaultHttpContext). -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
 </Project>

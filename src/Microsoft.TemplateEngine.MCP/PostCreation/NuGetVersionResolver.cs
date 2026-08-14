@@ -2,25 +2,29 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Collections.Concurrent;
-using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace Microsoft.TemplateEngine.MCP.PostCreation;
 
 /// <summary>
-/// Resolves the latest stable version of a NuGet package using the NuGet V3 API.
-/// Uses the flat-container endpoint for efficient version lookups. Results are cached in two tiers:
-/// an in-memory tier for the process lifetime and a best-effort on-disk tier that survives restarts
-/// (important for short-lived stdio servers). Successful lookups are cached for 30 minutes; failed
-/// lookups for a short window so a transient network blip doesn't suppress a package for long.
+/// Resolves the latest stable version of a NuGet package using the caller's configured feeds.
+///
+/// Lookups are delegated to <see cref="NuGetSourceResolver"/>, which honours the <c>NuGet.config</c>
+/// chain (private feeds, credentials, package source mapping, proxies). Results are cached in two
+/// tiers: an in-memory tier for the process lifetime and a best-effort on-disk tier that survives
+/// restarts (important for short-lived stdio servers). Successful lookups are cached for 30 minutes;
+/// failed lookups for a short window so a transient network blip doesn't suppress a package for long.
+///
+/// Cache entries are scoped to the feed set that produced them — the same package id can legitimately
+/// resolve to different versions in two repositories that point at different feeds, so a
+/// package-id-only key would leak versions across repository boundaries.
 /// </summary>
 internal static class NuGetVersionResolver
 {
-    private static readonly HttpClient HttpClient = CreateHttpClient();
-
-    private const string NuGetRegistrationBaseUrl = "https://api.nuget.org/v3-flatcontainer/";
-
-    private static readonly ConcurrentDictionary<string, CacheEntry> Cache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, CacheEntry> Cache = new(StringComparer.Ordinal);
 
     private static readonly TimeSpan SuccessTtl = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan FailureTtl = TimeSpan.FromMinutes(1);
@@ -30,73 +34,48 @@ internal static class NuGetVersionResolver
 
     private static readonly string? DiskCacheDir = ResolveDiskCacheDir();
 
-    private static HttpClient CreateHttpClient()
-    {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0";
-        client.DefaultRequestHeaders.UserAgent.ParseAdd($"Microsoft.TemplateEngine.MCP/{version}");
-        return client;
-    }
-
     /// <summary>
-    /// Get the latest stable version of a NuGet package.
-    /// Returns null if the package is not found or on error.
+    /// Get the latest stable version of a NuGet package as seen from <paramref name="rootDirectory"/>.
+    /// Returns null if the package is not found on any configured source, or on error.
     /// </summary>
+    /// <param name="packageId">The package id to look up.</param>
+    /// <param name="rootDirectory">
+    /// Directory used to discover the applicable <c>NuGet.config</c>. Defaults to the current
+    /// working directory when null.
+    /// </param>
+    /// <param name="logger">Optional logger for feed diagnostics.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public static async Task<string?> GetLatestStableVersionAsync(
         string packageId,
+        string? rootDirectory = null,
+        ILogger? logger = null,
         CancellationToken cancellationToken = default)
     {
+        var root = string.IsNullOrWhiteSpace(rootDirectory) ? Environment.CurrentDirectory : rootDirectory;
+        var scope = GetScopeKey(root, logger);
+        var cacheKey = scope + "|" + packageId.ToLowerInvariant();
+
         // L1: in-memory cache
-        if (Cache.TryGetValue(packageId, out var cached) && cached.ExpiresAt > DateTime.UtcNow)
+        if (Cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > DateTime.UtcNow)
         {
             return cached.Version;
         }
 
         // L2: on-disk cache
-        if (TryReadDiskCache(packageId, out var diskEntry) && diskEntry.ExpiresAt > DateTime.UtcNow)
+        if (TryReadDiskCache(cacheKey, out var diskEntry) && diskEntry.ExpiresAt > DateTime.UtcNow)
         {
-            Cache[packageId] = diskEntry;
+            Cache[cacheKey] = diskEntry;
             return diskEntry.Version;
         }
 
         try
         {
-            var url = $"{NuGetRegistrationBaseUrl}{packageId.ToLowerInvariant()}/index.json";
-            var response = await HttpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            var latest = await NuGetSourceResolver
+                .GetLatestStableVersionAsync(packageId, root, logger, cancellationToken)
+                .ConfigureAwait(false);
 
-            if (!response.IsSuccessStatusCode)
-            {
-                Store(packageId, null);
-                return null;
-            }
-
-            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(content);
-
-            if (!doc.RootElement.TryGetProperty("versions", out var versionsElement))
-            {
-                Store(packageId, null);
-                return null;
-            }
-
-            // Pick the highest stable version using proper SemVer ordering
-            // (don't rely on the array being pre-sorted).
-            NuGet.Versioning.NuGetVersion? latestStable = null;
-            foreach (var version in versionsElement.EnumerateArray())
-            {
-                var versionStr = version.GetString();
-                if (versionStr != null &&
-                    NuGet.Versioning.NuGetVersion.TryParse(versionStr, out var parsed) &&
-                    !parsed.IsPrerelease &&
-                    (latestStable == null || parsed > latestStable))
-                {
-                    latestStable = parsed;
-                }
-            }
-
-            var latestStableStr = latestStable?.ToNormalizedString();
-            Store(packageId, latestStableStr);
-            return latestStableStr;
+            Store(cacheKey, latest);
+            return latest;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -105,19 +84,42 @@ internal static class NuGetVersionResolver
         }
         catch (Exception)
         {
-            // Includes the HttpClient timeout (surfaced as a TaskCanceledException with no caller
-            // cancellation). Cache the failure briefly so we don't hammer the API on repeated misses.
-            Store(packageId, null);
+            // Offline, unreachable feed, or an auth failure. Cache the miss briefly so we don't
+            // retry every package in a large solution against a feed that is currently down.
+            Store(cacheKey, null);
             return null;
         }
     }
 
-    private static void Store(string packageId, string? version)
+    /// <summary>
+    /// Builds a short, stable key describing which feeds apply to a directory, so cached versions
+    /// are never reused across repositories configured against different sources.
+    /// </summary>
+    private static string GetScopeKey(string rootDirectory, ILogger? logger)
+    {
+        try
+        {
+            var description = NuGetSourceResolver.DescribeSources(rootDirectory, logger);
+            var raw = string.Join(
+                "\n",
+                description.EnabledSources.OrderBy(s => s, StringComparer.OrdinalIgnoreCase));
+            raw += "\nmapping=" + description.PackageSourceMappingEnabled;
+
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
+            return Convert.ToHexString(hash, 0, 8).ToLowerInvariant();
+        }
+        catch
+        {
+            return "default";
+        }
+    }
+
+    private static void Store(string cacheKey, string? version)
     {
         var ttl = version == null ? FailureTtl : SuccessTtl;
         var entry = new CacheEntry(version, DateTime.UtcNow + ttl);
-        Cache[packageId] = entry;
-        WriteDiskCache(packageId, entry);
+        Cache[cacheKey] = entry;
+        WriteDiskCache(cacheKey, entry);
     }
 
     /// <summary>
@@ -134,6 +136,7 @@ internal static class NuGetVersionResolver
     internal static void ClearCache()
     {
         Cache.Clear();
+        NuGetSourceResolver.ClearCache();
         try
         {
             if (DiskCacheDir != null && Directory.Exists(DiskCacheDir))
@@ -147,7 +150,7 @@ internal static class NuGetVersionResolver
         catch { }
     }
 
-    // ── On-disk cache (best-effort, one file per package) ──
+    // ── On-disk cache (best-effort, one file per package + feed scope) ──
 
     private static string? ResolveDiskCacheDir()
     {
@@ -169,23 +172,31 @@ internal static class NuGetVersionResolver
         }
     }
 
-    private static string? CacheFilePath(string packageId)
+    private static string? CacheFilePath(string cacheKey)
     {
         if (DiskCacheDir == null)
         {
             return null;
         }
 
-        // Sanitize the package id into a safe file name.
-        var safe = string.Concat(packageId.ToLowerInvariant().Select(c =>
+        // Sanitize the cache key into a safe file name.
+        var safe = string.Concat(cacheKey.ToLowerInvariant().Select(c =>
             char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '_'));
+
+        // Long package ids plus the scope prefix can exceed path limits — bound the file name.
+        if (safe.Length > 120)
+        {
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cacheKey)), 0, 8).ToLowerInvariant();
+            safe = safe.Substring(0, 100) + "_" + hash;
+        }
+
         return Path.Combine(DiskCacheDir, safe + ".json");
     }
 
-    private static bool TryReadDiskCache(string packageId, out CacheEntry entry)
+    private static bool TryReadDiskCache(string cacheKey, out CacheEntry entry)
     {
         entry = default!;
-        var path = CacheFilePath(packageId);
+        var path = CacheFilePath(cacheKey);
         if (path == null || !File.Exists(path))
         {
             return false;
@@ -209,9 +220,9 @@ internal static class NuGetVersionResolver
         }
     }
 
-    private static void WriteDiskCache(string packageId, CacheEntry entry)
+    private static void WriteDiskCache(string cacheKey, CacheEntry entry)
     {
-        var path = CacheFilePath(packageId);
+        var path = CacheFilePath(cacheKey);
         if (path == null)
         {
             return;
