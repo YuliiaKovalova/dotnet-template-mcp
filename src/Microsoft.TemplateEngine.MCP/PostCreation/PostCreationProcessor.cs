@@ -12,6 +12,13 @@ namespace Microsoft.TemplateEngine.MCP.PostCreation;
 /// </summary>
 internal sealed class PostCreationProcessor
 {
+    /// <summary>
+    /// Report, not Apply. Rewriting every PackageReference to "latest stable" at creation time
+    /// produces untested version combinations and silently overrides the template author's pinning,
+    /// so upgrades are surfaced to the caller instead of being applied.
+    /// </summary>
+    public const PackageVersionPolicy DefaultVersionPolicy = PackageVersionPolicy.Report;
+
     private readonly ILogger _logger;
 
     public PostCreationProcessor(ILoggerFactory loggerFactory)
@@ -21,14 +28,15 @@ internal sealed class PostCreationProcessor
 
     /// <summary>
     /// Process all generated .csproj files in the output directory.
-    /// Detects CPM, strips versions, updates Directory.Packages.props, and optionally resolves latest NuGet versions.
+    /// Detects CPM, strips versions, updates Directory.Packages.props, and reports (or applies)
+    /// newer NuGet versions according to <paramref name="versionPolicy"/>.
     /// </summary>
     public async Task<PostCreationResult> ProcessAsync(
         string outputDirectory,
-        bool resolveLatestVersions = true,
+        PackageVersionPolicy versionPolicy = DefaultVersionPolicy,
         CancellationToken cancellationToken = default)
     {
-        var result = new PostCreationResult();
+        var result = new PostCreationResult { VersionPolicy = versionPolicy };
 
         var csprojFiles = Directory.GetFiles(outputDirectory, "*.csproj", SearchOption.AllDirectories);
         if (csprojFiles.Length == 0)
@@ -50,7 +58,7 @@ internal sealed class PostCreationProcessor
         foreach (var csprojPath in csprojFiles)
         {
             var csprojResult = await ProcessCsprojAsync(
-                csprojPath, packagesPropsPath, cpmDetected, resolveLatestVersions, cancellationToken)
+                csprojPath, outputDirectory, packagesPropsPath, cpmDetected, versionPolicy, cancellationToken)
                 .ConfigureAwait(false);
             result.ProcessedFiles.Add(csprojResult);
         }
@@ -58,11 +66,26 @@ internal sealed class PostCreationProcessor
         return result;
     }
 
+    /// <summary>
+    /// Backward-compatible overload: <c>true</c> applies upgrades, <c>false</c> skips the lookup entirely.
+    /// </summary>
+    public Task<PostCreationResult> ProcessAsync(
+        string outputDirectory,
+        bool resolveLatestVersions,
+        CancellationToken cancellationToken = default)
+    {
+        return ProcessAsync(
+            outputDirectory,
+            resolveLatestVersions ? PackageVersionPolicy.Apply : PackageVersionPolicy.Skip,
+            cancellationToken);
+    }
+
     private async Task<CsprojProcessingResult> ProcessCsprojAsync(
         string csprojPath,
+        string rootDirectory,
         string? packagesPropsPath,
         bool cpmDetected,
-        bool resolveLatestVersions,
+        PackageVersionPolicy versionPolicy,
         CancellationToken cancellationToken)
     {
         var fileResult = new CsprojProcessingResult { FilePath = csprojPath };
@@ -95,8 +118,12 @@ internal sealed class PostCreationProcessor
             packages.Add((pr, name, version));
         }
 
-        // Step 1: Resolve latest stable versions if requested
-        if (resolveLatestVersions)
+        // Step 1: Look up newer versions unless explicitly skipped. Under Report (the default) the
+        // findings are surfaced to the caller but never written — rewriting every reference to
+        // "latest stable" at creation time produces untested combinations and discards the template
+        // author's deliberate pinning.
+        bool applyUpgrades = versionPolicy == PackageVersionPolicy.Apply;
+        if (versionPolicy != PackageVersionPolicy.Skip)
         {
             foreach (var (element, name, currentVersion) in packages)
             {
@@ -107,13 +134,16 @@ internal sealed class PostCreationProcessor
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var latestVersion = await NuGetVersionResolver.GetLatestStableVersionAsync(name, cancellationToken)
+                var latestVersion = await NuGetVersionResolver
+                    .GetLatestStableVersionAsync(name, rootDirectory, _logger, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (latestVersion != null && IsNewerVersion(latestVersion, currentVersion))
                 {
                     fileResult.VersionUpgrades.Add(new VersionUpgrade(name, currentVersion, latestVersion));
-                    _logger.LogInformation("Upgrade available: {Package} {Old} → {New}", name, currentVersion, latestVersion);
+                    _logger.LogInformation(
+                        applyUpgrades ? "Upgrading: {Package} {Old} → {New}" : "Upgrade available: {Package} {Old} → {New}",
+                        name, currentVersion, latestVersion);
                 }
             }
         }
@@ -149,9 +179,10 @@ internal sealed class PostCreationProcessor
                     continue; // Already versionless
                 }
 
-                // Determine the version to use: latest if resolved, otherwise current
+                // Determine the version to use: latest only when we're applying upgrades,
+                // otherwise preserve the version the template author chose.
                 var upgrade = fileResult.VersionUpgrades.FirstOrDefault(u => u.PackageName == name);
-                var versionToUse = upgrade?.NewVersion ?? currentVersion;
+                var versionToUse = (applyUpgrades ? upgrade?.NewVersion : null) ?? currentVersion;
 
                 // Add to Directory.Packages.props if not already there, or update if stale
                 if (!existingVersions.Contains(name))
@@ -173,7 +204,7 @@ internal sealed class PostCreationProcessor
 
                     _logger.LogInformation("Added to Directory.Packages.props: {Package} {Version}", name, versionToUse);
                 }
-                else if (resolveLatestVersions && upgrade != null)
+                else if (applyUpgrades && upgrade != null)
                 {
                     // Package exists in props but version is stale — update it
                     var existingElement = propsRoot.Descendants(propsNs + "PackageVersion")
@@ -221,7 +252,7 @@ internal sealed class PostCreationProcessor
                 doc.Save(csprojPath);
             }
         }
-        else if (resolveLatestVersions && fileResult.VersionUpgrades.Count > 0)
+        else if (applyUpgrades && fileResult.VersionUpgrades.Count > 0)
         {
             // No CPM — update versions directly in .csproj
             foreach (var upgrade in fileResult.VersionUpgrades)
@@ -296,6 +327,21 @@ internal sealed class PostCreationProcessor
     }
 }
 
+/// <summary>
+/// Controls what happens when a newer stable version of a referenced package exists.
+/// </summary>
+internal enum PackageVersionPolicy
+{
+    /// <summary>Don't query feeds at all — fastest, and fully offline.</summary>
+    Skip,
+
+    /// <summary>Query feeds and report available upgrades without modifying any file. Default.</summary>
+    Report,
+
+    /// <summary>Query feeds and rewrite package references to the latest stable version.</summary>
+    Apply,
+}
+
 /// <summary>Overall result of post-creation processing.</summary>
 internal class PostCreationResult
 {
@@ -303,8 +349,23 @@ internal class PostCreationResult
     public string? DirectoryPackagesPropsPath { get; set; }
     public List<CsprojProcessingResult> ProcessedFiles { get; } = new();
 
+    /// <summary>The policy that governed version handling for this run.</summary>
+    public PackageVersionPolicy VersionPolicy { get; init; } = PackageVersionPolicy.Report;
+
+    /// <summary>True when the discovered upgrades were written to disk rather than just reported.</summary>
+    public bool VersionUpgradesApplied => VersionPolicy == PackageVersionPolicy.Apply;
+
+    /// <summary>
+    /// True when this run actually modified files. Reported-but-not-applied upgrades are
+    /// deliberately excluded — nothing was written for them.
+    /// </summary>
     public bool HasChanges => ProcessedFiles.Any(f =>
-        f.VersionUpgrades.Count > 0 || f.VersionsStripped.Count > 0 || f.AddedToDirectoryPackagesProps.Count > 0);
+        (VersionUpgradesApplied && f.VersionUpgrades.Count > 0)
+        || f.VersionsStripped.Count > 0
+        || f.AddedToDirectoryPackagesProps.Count > 0);
+
+    /// <summary>True when there is anything worth reporting back to the caller.</summary>
+    public bool HasFindings => HasChanges || ProcessedFiles.Any(f => f.VersionUpgrades.Count > 0);
 }
 
 /// <summary>Result of processing a single .csproj file.</summary>
