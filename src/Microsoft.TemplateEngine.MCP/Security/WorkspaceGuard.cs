@@ -3,6 +3,8 @@
 
 namespace Microsoft.TemplateEngine.MCP.Security;
 
+using System.Security;
+
 /// <summary>
 /// Confines filesystem writes to a configured workspace root.
 ///
@@ -21,6 +23,11 @@ internal static class WorkspaceGuard
     /// Validates that <paramref name="candidatePath"/> resolves inside the workspace root.
     /// Returns null when the path is allowed, or a human-readable reason when it is rejected.
     /// </summary>
+    /// <remarks>
+    /// Callers must validate the path they are actually going to write to. Passing a raw, still-
+    /// unresolved parameter is not sufficient when the effective path is composed from other
+    /// untrusted inputs afterwards.
+    /// </remarks>
     public static string? Validate(string? candidatePath, McpFeatureFlags featureFlags)
     {
         if (!featureFlags.WorkspaceEnforcementEnabled)
@@ -38,7 +45,7 @@ internal static class WorkspaceGuard
         string resolved;
         try
         {
-            root = NormalizeDirectory(featureFlags.WorkspaceRoot);
+            root = ResolveExisting(featureFlags.WorkspaceRoot);
             resolved = ResolveCandidate(candidatePath);
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
@@ -46,12 +53,42 @@ internal static class WorkspaceGuard
             return $"Path '{candidatePath}' is not a valid filesystem path: {ex.Message}";
         }
 
-        if (IsWithin(resolved, root))
+        if (IsWithin(resolved, WithTrailingSeparator(root)))
         {
             return null;
         }
 
-        return $"Path '{candidatePath}' resolves to '{resolved}', which is outside the permitted workspace root '{root.TrimEnd(Path.DirectorySeparatorChar)}'.";
+        return $"Path '{candidatePath}' resolves to '{resolved}', which is outside the permitted workspace root '{root}'.";
+    }
+
+    /// <summary>
+    /// Validates a name segment that will be combined into a filesystem path. Template names and
+    /// project names flow into <c>Path.Combine</c>, where a value like <c>../../etc</c> silently
+    /// escapes the directory it was meant to be created under.
+    /// </summary>
+    public static string? ValidateNameSegment(string? name, string parameterName = "name")
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        if (name.Contains(Path.DirectorySeparatorChar) || name.Contains(Path.AltDirectorySeparatorChar))
+        {
+            return $"The '{parameterName}' value '{name}' contains a path separator. It must be a single name segment, not a path.";
+        }
+
+        if (name.Split('/', '\\').Any(segment => segment is ".." or "."))
+        {
+            return $"The '{parameterName}' value '{name}' contains a relative path segment.";
+        }
+
+        if (Path.IsPathRooted(name) || name.Contains(':'))
+        {
+            return $"The '{parameterName}' value '{name}' must be a relative single name segment, not a rooted path.";
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -70,8 +107,8 @@ internal static class WorkspaceGuard
     }
 
     /// <summary>
-    /// Resolves a candidate path to a comparable absolute form, following symlinks where possible so
-    /// a link inside the workspace cannot be used to redirect writes outside it.
+    /// Resolves a candidate path to a comparable absolute form, following symlinks so a link
+    /// anywhere along the path cannot be used to redirect writes outside the workspace.
     /// </summary>
     private static string ResolveCandidate(string candidatePath)
     {
@@ -95,20 +132,64 @@ internal static class WorkspaceGuard
             return full;
         }
 
+        var resolvedExisting = ResolveExisting(existing);
+        var remainder = full.Substring(existing.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        return string.IsNullOrEmpty(remainder)
+            ? resolvedExisting
+            : Path.GetFullPath(Path.Combine(resolvedExisting, remainder));
+    }
+
+    /// <summary>
+    /// Fully resolves an existing path, following links at <em>every</em> level.
+    ///
+    /// Resolving only the deepest existing component is not enough: if an ancestor is a junction,
+    /// <see cref="Directory.Exists"/> succeeds straight through it, so the deepest component is not
+    /// itself a link and the redirection goes unnoticed. The workspace root is resolved with this
+    /// same function so a root that is itself a link (Dev Drive, redirected profile, /tmp on macOS)
+    /// compares equal instead of rejecting every write.
+    /// </summary>
+    private static string ResolveExisting(string path)
+    {
+        var full = Path.GetFullPath(path);
+
         try
         {
-            var info = Directory.Exists(existing) ? new DirectoryInfo(existing) : (FileSystemInfo)new FileInfo(existing);
+            // Resolve the deepest component first; that collapses the common case in one call.
+            var info = Directory.Exists(full) ? new DirectoryInfo(full) : (FileSystemInfo)new FileInfo(full);
             var target = info.ResolveLinkTarget(returnFinalTarget: true);
             if (target != null)
             {
-                // Re-attach the not-yet-created remainder to the real target.
-                var remainder = full.Substring(existing.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                return string.IsNullOrEmpty(remainder)
-                    ? Path.GetFullPath(target.FullName)
-                    : Path.GetFullPath(Path.Combine(target.FullName, remainder));
+                full = Path.GetFullPath(target.FullName);
+            }
+
+            // Then walk the ancestors, since a junction higher up is transparent to Exists().
+            var segments = new List<string>();
+            var current = full;
+            while (true)
+            {
+                var parent = Path.GetDirectoryName(current);
+                if (string.IsNullOrEmpty(parent) || parent == current)
+                {
+                    break;
+                }
+
+                segments.Add(Path.GetFileName(current));
+
+                if (Directory.Exists(parent))
+                {
+                    var parentTarget = new DirectoryInfo(parent).ResolveLinkTarget(returnFinalTarget: true);
+                    if (parentTarget != null)
+                    {
+                        segments.Reverse();
+                        return Path.GetFullPath(Path.Combine(parentTarget.FullName, Path.Combine(segments.ToArray())));
+                    }
+                }
+
+                current = parent;
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
         {
             // Link resolution is best-effort; fall back to the lexical path.
         }
@@ -116,11 +197,8 @@ internal static class WorkspaceGuard
         return full;
     }
 
-    private static string NormalizeDirectory(string path)
-    {
-        var full = Path.GetFullPath(path);
-        return full.EndsWith(Path.DirectorySeparatorChar) ? full : full + Path.DirectorySeparatorChar;
-    }
+    private static string WithTrailingSeparator(string path)
+        => path.EndsWith(Path.DirectorySeparatorChar) ? path : path + Path.DirectorySeparatorChar;
 
     /// <summary>
     /// True when <paramref name="resolved"/> is the root itself or sits beneath it. The trailing

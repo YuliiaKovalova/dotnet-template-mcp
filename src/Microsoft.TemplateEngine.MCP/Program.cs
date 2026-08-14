@@ -45,6 +45,20 @@ internal sealed class Program
     /// </summary>
     private static bool ValidateHttpSecurity(McpFeatureFlags featureFlags)
     {
+        if (featureFlags.HttpAllowAnonymousInvalidValue != null)
+        {
+            Console.Error.WriteLine(
+                $"""
+                FATAL: {McpFeatureFlags.HttpAllowAnonymousEnvVar} is set to '{featureFlags.HttpAllowAnonymousInvalidValue}',
+                which is not a recognized boolean.
+
+                This flag disables authentication, so an ambiguous value is not guessed.
+                Use one of: true, false, 1, 0, yes, no, on, off.
+                """);
+
+            return false;
+        }
+
         if (featureFlags.HttpAuthenticationRequired || featureFlags.HttpAllowAnonymous)
         {
             return true;
@@ -103,15 +117,23 @@ internal sealed class Program
             {
                 options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-                // Partition by presented credential where available, otherwise by remote address, so
-                // one noisy client can't exhaust template-engine and NuGet capacity for everyone.
+                // Partition by remote address, never by the Authorization header.
+                //
+                // Keying on a request header lets any client mint a fresh budget by rotating that
+                // header, which defeats rate limiting outright and, worse, hands an attacker an
+                // unthrottled token brute-force channel: every wrong guess is a new partition.
+                // The remote address is the only identity here the caller cannot choose. (With a
+                // single shared secret, partitioning by token would also be meaningless — every
+                // legitimate client presents the same one.)
                 options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
                 {
-                    var key = context.Request.Headers.Authorization.ToString();
-                    if (string.IsNullOrWhiteSpace(key))
+                    // Liveness probes must never be throttled.
+                    if (context.Request.Path.StartsWithSegments("/health"))
                     {
-                        key = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                        return RateLimitPartition.GetNoLimiter("health");
                     }
+
+                    var key = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
                     return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
                     {
@@ -125,6 +147,9 @@ internal sealed class Program
 
         var app = builder.Build();
 
+        // Deliberately ahead of the token gate: failed authentication attempts must consume budget,
+        // otherwise brute-force guessing is unthrottled. This is safe only because the partition key
+        // is the remote address rather than anything the caller supplies.
         if (featureFlags.HttpRateLimitPerMinute > 0)
         {
             app.UseRateLimiter();
@@ -182,7 +207,9 @@ internal sealed class Program
         services.AddSingleton<TemplateEngineService>();
         services.AddSingleton<TemplateEngineFacade>();
         services.AddSingleton<PostCreationProcessor>();
-        services.AddSingleton<PostActionExecutor>();
+        services.AddSingleton<PostActionExecutor>(sp => new PostActionExecutor(
+            sp.GetRequiredService<ILoggerFactory>(),
+            sp.GetRequiredService<McpFeatureFlags>()));
         services.AddSingleton<PackageUpgradeService>();
     }
 

@@ -103,4 +103,128 @@ public class WorkspaceGuardTests : IDisposable
         Assert.Equal("path_outside_workspace", root.GetProperty("errorCode").GetString());
         Assert.Contains("MCP_TEMPLATE_WORKSPACE_ROOT", root.GetProperty("suggestion").GetString());
     }
+
+    // --- Name segments -------------------------------------------------------------------------
+    // A project name is combined into the output path, so a name carrying path syntax escapes the
+    // directory the caller believes it is writing to.
+
+    [Theory]
+    [InlineData("../escape")]
+    [InlineData("..\\escape")]
+    [InlineData("../../../Users/me/.ssh")]
+    [InlineData("sub/dir")]
+    [InlineData("sub\\dir")]
+    public void ValidateNameSegment_PathSyntax_IsRejected(string name)
+    {
+        Assert.NotNull(WorkspaceGuard.ValidateNameSegment(name));
+    }
+
+    [Theory]
+    [InlineData("MyApp")]
+    [InlineData("My.App")]
+    [InlineData("my-app_1")]
+    [InlineData(null)]
+    [InlineData("")]
+    public void ValidateNameSegment_PlainName_IsAllowed(string? name)
+    {
+        Assert.Null(WorkspaceGuard.ValidateNameSegment(name));
+    }
+
+    [Fact]
+    public void ValidateNameSegment_RootedPath_IsRejected()
+    {
+        Assert.NotNull(WorkspaceGuard.ValidateNameSegment(Path.Combine(Path.GetTempPath(), "elsewhere")));
+    }
+
+    [Fact]
+    public void ValidateNameSegment_MessageNamesTheParameter()
+    {
+        var message = WorkspaceGuard.ValidateNameSegment("../x", "projectName");
+
+        Assert.NotNull(message);
+        Assert.Contains("projectName", message);
+    }
+
+    // --- Links ---------------------------------------------------------------------------------
+
+    [Fact]
+    public void Validate_SymlinkedRoot_StillAllowsPathsInsideIt()
+    {
+        // A workspace root that is itself a link is normal (Dev Drive, redirected profile, /tmp on
+        // macOS). If the root is compared lexically while candidates are link-resolved, every write
+        // is falsely rejected and the server is unusable.
+        var realRoot = Path.Combine(Path.GetTempPath(), $"mcp-real-{Guid.NewGuid():N}");
+        var linkRoot = Path.Combine(Path.GetTempPath(), $"mcp-link-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(realRoot);
+
+        if (!TryCreateDirectoryLink(linkRoot, realRoot))
+        {
+            return; // Unprivileged Windows agent: symlink creation is not permitted.
+        }
+
+        try
+        {
+            var flags = new McpFeatureFlags { WorkspaceRoot = linkRoot, WorkspaceEnforcementEnabled = true };
+
+            Assert.Null(WorkspaceGuard.Validate(Path.Combine(linkRoot, "MyApp"), flags));
+            Assert.Null(WorkspaceGuard.Validate(Path.Combine(realRoot, "MyApp"), flags));
+        }
+        finally
+        {
+            TryDelete(linkRoot);
+            TryDelete(realRoot);
+        }
+    }
+
+    [Fact]
+    public void Validate_LinkInsideRootPointingOutside_IsRejected()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), $"mcp-outside-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(outside);
+        var link = Path.Combine(_root, "escape");
+
+        if (!TryCreateDirectoryLink(link, outside))
+        {
+            return;
+        }
+
+        try
+        {
+            // Both the link itself and a not-yet-created path *under* it must be rejected: resolving
+            // only the deepest existing component would miss the second case entirely.
+            Assert.NotNull(WorkspaceGuard.Validate(link, Flags()));
+            Assert.NotNull(WorkspaceGuard.Validate(Path.Combine(link, "MyApp"), Flags()));
+            Assert.NotNull(WorkspaceGuard.Validate(Path.Combine(link, "a", "b", "c"), Flags()));
+        }
+        finally
+        {
+            TryDelete(link);
+            TryDelete(outside);
+        }
+    }
+
+    private static bool TryCreateDirectoryLink(string link, string target)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(link, target);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch { }
+    }
 }

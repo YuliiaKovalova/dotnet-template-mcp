@@ -33,15 +33,15 @@ internal sealed class PackagesUpgradeTool
 
             var resolvedPath = path ?? featureFlags.WorkspaceRoot;
 
-            // Only guard the mutating mode — reporting on a path outside the workspace is harmless.
-            if (apply)
+            // Guard both modes. "Reporting is harmless" understated it: the read path returns a
+            // package/version inventory for any path on disk and, via the not-found branch below,
+            // doubles as an existence oracle — which matters once the HTTP transport makes the
+            // caller remote. The workspace root is the boundary for reads as well as writes.
+            var rejection = WorkspaceGuard.Validate(resolvedPath, featureFlags);
+            if (rejection != null)
             {
-                var rejection = WorkspaceGuard.Validate(resolvedPath, featureFlags);
-                if (rejection != null)
-                {
-                    McpTelemetry.RecordError(activity, "packages_upgrade", rejection);
-                    return WorkspaceGuard.PathRejectedError(rejection);
-                }
+                McpTelemetry.RecordError(activity, "packages_upgrade", rejection);
+                return WorkspaceGuard.PathRejectedError(rejection);
             }
 
             if (!File.Exists(resolvedPath) && !Directory.Exists(resolvedPath))

@@ -60,6 +60,12 @@ internal sealed class McpFeatureFlags
     public const string WorkspaceRootEnvVar = "MCP_TEMPLATE_WORKSPACE_ROOT";
 
     /// <summary>
+    /// Environment variable that disables every outbound NuGet feed query for version resolution.
+    /// Off by default. Set to "true" for offline or air-gapped environments.
+    /// </summary>
+    public const string OfflineEnvVar = "MCP_TEMPLATE_OFFLINE";
+
+    /// <summary>
     /// Environment variable to enable/disable workspace confinement of write paths.
     /// Enabled by default. Set to "false" or "0" to allow writes to arbitrary paths.
     /// </summary>
@@ -145,6 +151,19 @@ internal sealed class McpFeatureFlags
     public bool HttpAllowAnonymous { get; init; }
 
     /// <summary>
+    /// Set when <see cref="HttpAllowAnonymousEnvVar"/> held a value that is neither a recognized
+    /// affirmative nor a recognized negative. Startup refuses to continue rather than guessing,
+    /// because guessing wrong here silently disables authentication.
+    /// </summary>
+    public string? HttpAllowAnonymousInvalidValue { get; init; }
+
+    /// <summary>
+    /// When true, no NuGet feed is contacted for version resolution. Package versions are left
+    /// exactly as the template authored them.
+    /// </summary>
+    public bool OfflineMode { get; init; }
+
+    /// <summary>
     /// Per-client requests allowed per minute on the HTTP transport. Zero disables rate limiting.
     /// </summary>
     public int HttpRateLimitPerMinute { get; init; } = DefaultHttpRateLimitPerMinute;
@@ -164,6 +183,8 @@ internal sealed class McpFeatureFlags
     /// </summary>
     public static McpFeatureFlags FromEnvironment(string[] args)
     {
+        var allowAnonymous = IsExplicitlyOptedIn(HttpAllowAnonymousEnvVar, out var invalidAnonymousValue);
+
         return new McpFeatureFlags
         {
             IntentResolutionEnabled = IsEnabled(IntentResolutionEnvVar, defaultValue: true),
@@ -173,10 +194,12 @@ internal sealed class McpFeatureFlags
             Profile = GetToolProfile(),
             PostActionsEnabled = IsEnabled(PostActionsEnvVar, defaultValue: true),
             ResolveLatestVersionsByDefault = IsEnabled(ResolveLatestVersionsEnvVar, defaultValue: false),
+            OfflineMode = IsEnabled(OfflineEnvVar, defaultValue: false),
             WorkspaceRoot = GetWorkspaceRoot(),
             WorkspaceEnforcementEnabled = IsEnabled(WorkspaceEnforcementEnvVar, defaultValue: true),
             HttpAuthToken = NullIfEmpty(Environment.GetEnvironmentVariable(HttpAuthTokenEnvVar)),
-            HttpAllowAnonymous = IsEnabled(HttpAllowAnonymousEnvVar, defaultValue: false),
+            HttpAllowAnonymous = allowAnonymous,
+            HttpAllowAnonymousInvalidValue = invalidAnonymousValue,
             HttpRateLimitPerMinute = GetHttpRateLimit(),
         };
     }
@@ -269,7 +292,7 @@ internal sealed class McpFeatureFlags
 
     private static bool IsEnabled(string envVar, bool defaultValue)
     {
-        var value = Environment.GetEnvironmentVariable(envVar);
+        var value = Environment.GetEnvironmentVariable(envVar)?.Trim();
         if (string.IsNullOrEmpty(value))
         {
             return defaultValue;
@@ -279,6 +302,43 @@ internal sealed class McpFeatureFlags
             && !value.Equals("no", StringComparison.OrdinalIgnoreCase)
             && !value.Equals("off", StringComparison.OrdinalIgnoreCase)
             && value != "0";
+    }
+
+    /// <summary>
+    /// Strict opt-in parsing for flags that <em>weaken</em> a security control.
+    ///
+    /// <see cref="IsEnabled"/> treats anything unrecognized as true, which is the safe direction for
+    /// enable-flags but the wrong one here: with that parsing,
+    /// <c>MCP_TEMPLATE_HTTP_ALLOW_ANONYMOUS=nope</c> would disable authentication. Only an explicit,
+    /// recognized affirmative opts out; an unrecognized value is an operator error and is rejected.
+    /// </summary>
+    private static bool IsExplicitlyOptedIn(string envVar, out string? invalidValue)
+    {
+        invalidValue = null;
+        var value = Environment.GetEnvironmentVariable(envVar)?.Trim();
+        if (string.IsNullOrEmpty(value))
+        {
+            return false;
+        }
+
+        if (value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("on", StringComparison.OrdinalIgnoreCase)
+            || value == "1")
+        {
+            return true;
+        }
+
+        if (value.Equals("false", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("no", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("off", StringComparison.OrdinalIgnoreCase)
+            || value == "0")
+        {
+            return false;
+        }
+
+        invalidValue = value;
+        return false;
     }
 }
 

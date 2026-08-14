@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.TemplateEngine.Abstractions;
 using ITemplateCreationResult = Microsoft.TemplateEngine.Edge.Template.ITemplateCreationResult;
@@ -33,22 +34,36 @@ internal sealed class PostActionExecutor
 
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(5);
 
+    /// <summary>Environment variable overriding the per-post-action process timeout, in seconds.</summary>
+    internal const string PostActionTimeoutEnvVar = "MCP_TEMPLATE_POST_ACTION_TIMEOUT_SECONDS";
+
     private readonly ILogger _logger;
     private readonly Func<string, string, string, CancellationToken, Task<ProcessRunResult>> _runProcess;
+    private readonly McpFeatureFlags? _featureFlags;
 
-    public PostActionExecutor(ILoggerFactory loggerFactory)
-        : this(loggerFactory.CreateLogger<PostActionExecutor>(), null)
+    public PostActionExecutor(ILoggerFactory loggerFactory, McpFeatureFlags? featureFlags = null)
+        : this(loggerFactory.CreateLogger<PostActionExecutor>(), null, featureFlags)
     {
     }
 
     /// <summary>Test seam: inject a fake process runner so tests never shell out.</summary>
     internal PostActionExecutor(
         ILogger logger,
-        Func<string, string, string, CancellationToken, Task<ProcessRunResult>>? runProcess)
+        Func<string, string, string, CancellationToken, Task<ProcessRunResult>>? runProcess,
+        McpFeatureFlags? featureFlags = null)
     {
         _logger = logger;
         _runProcess = runProcess ?? RunProcessAsync;
+        _featureFlags = featureFlags;
     }
+
+    /// <summary>
+    /// The directory the solution search must not climb above, or null for an unbounded walk.
+    /// Without this, the add-to-solution post-action can modify a <c>.sln</c> outside the workspace
+    /// root — writing through the very boundary the workspace guard exists to enforce.
+    /// </summary>
+    private string? SolutionSearchBoundary
+        => _featureFlags is { WorkspaceEnforcementEnabled: true } ? _featureFlags.WorkspaceRoot : null;
 
     /// <summary>
     /// Runs the supported post-actions declared by the template.
@@ -160,7 +175,7 @@ internal sealed class PostActionExecutor
         string outputDirectory,
         CancellationToken cancellationToken)
     {
-        var solutionPath = FindSolution(outputDirectory);
+        var solutionPath = FindSolution(outputDirectory, SolutionSearchBoundary);
         if (solutionPath == null)
         {
             return new ExecutedPostAction(
@@ -276,12 +291,25 @@ internal sealed class PostActionExecutor
         return result;
     }
 
-    /// <summary>Walks up from the output directory looking for a solution file.</summary>
-    internal static string? FindSolution(string startDirectory)
+    /// <summary>
+    /// Walks up from the output directory looking for a solution file, stopping at
+    /// <paramref name="boundaryDirectory"/> (inclusive) when one is supplied.
+    /// </summary>
+    internal static string? FindSolution(string startDirectory, string? boundaryDirectory = null)
     {
         try
         {
             var dir = Path.GetFullPath(startDirectory);
+            var boundary = string.IsNullOrWhiteSpace(boundaryDirectory)
+                ? null
+                : Path.GetFullPath(boundaryDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            // A start directory outside the boundary has no in-bounds ancestor to search.
+            if (boundary != null && !IsAtOrBelow(dir, boundary))
+            {
+                return null;
+            }
+
             while (!string.IsNullOrEmpty(dir))
             {
                 if (Directory.Exists(dir))
@@ -295,6 +323,15 @@ internal sealed class PostActionExecutor
                     {
                         return solution;
                     }
+                }
+
+                if (boundary != null
+                    && string.Equals(
+                        dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                        boundary,
+                        PathComparison))
+                {
+                    break;
                 }
 
                 var parent = Path.GetDirectoryName(dir);
@@ -312,6 +349,18 @@ internal sealed class PostActionExecutor
         }
 
         return null;
+    }
+
+    private static StringComparison PathComparison
+        => OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+    private static bool IsAtOrBelow(string candidate, string boundary)
+    {
+        var normalized = candidate.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return string.Equals(normalized, boundary, PathComparison)
+            || normalized.StartsWith(boundary + Path.DirectorySeparatorChar, PathComparison);
     }
 
     private static bool IsProjectFile(string path)
@@ -359,7 +408,53 @@ internal sealed class PostActionExecutor
         }
     }
 
-    private static string Quote(string path) => path.Contains(' ') ? $"\"{path}\"" : path;
+    /// <summary>
+    /// Quotes and escapes a single argument for <see cref="ProcessStartInfo.Arguments"/>.
+    ///
+    /// Quoting only when a space is present was wrong in two ways: it missed tabs, and it never
+    /// escaped an embedded quote, so a path such as <c>evil" -p:X=Y ".csproj</c> (legal on Unix)
+    /// would be split into extra arguments to <c>dotnet restore</c>. Arguments are always quoted and
+    /// escaped per the Windows CRT rules that .NET applies to this string on every platform:
+    /// a backslash run preceding a quote — including the closing quote — must be doubled.
+    /// </summary>
+    internal static string Quote(string value)
+    {
+        var sb = new StringBuilder(value.Length + 2);
+        sb.Append('"');
+
+        var i = 0;
+        while (i < value.Length)
+        {
+            var backslashes = 0;
+            while (i < value.Length && value[i] == '\\')
+            {
+                backslashes++;
+                i++;
+            }
+
+            if (i == value.Length)
+            {
+                // Backslashes immediately before the closing quote must be doubled.
+                sb.Append('\\', backslashes * 2);
+                break;
+            }
+
+            if (value[i] == '"')
+            {
+                sb.Append('\\', (backslashes * 2) + 1);
+            }
+            else
+            {
+                sb.Append('\\', backslashes);
+            }
+
+            sb.Append(value[i]);
+            i++;
+        }
+
+        sb.Append('"');
+        return sb.ToString();
+    }
 
     private static string? Truncate(string? value, int max = 4000)
     {
@@ -372,10 +467,19 @@ internal sealed class PostActionExecutor
         return trimmed.Length <= max ? trimmed : trimmed.Substring(0, max) + "… (truncated)";
     }
 
-    private static async Task<ProcessRunResult> RunProcessAsync(
+    private static Task<ProcessRunResult> RunProcessAsync(
         string fileName,
         string arguments,
         string workingDirectory,
+        CancellationToken cancellationToken)
+        => RunProcessCoreAsync(fileName, arguments, workingDirectory, ResolveTimeout(), cancellationToken);
+
+    /// <summary>Test seam: same as <see cref="RunProcessAsync"/> with an explicit timeout.</summary>
+    internal static async Task<ProcessRunResult> RunProcessCoreAsync(
+        string fileName,
+        string arguments,
+        string workingDirectory,
+        TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         var startInfo = new ProcessStartInfo
@@ -400,11 +504,14 @@ internal sealed class PostActionExecutor
             return new ProcessRunResult(-1, string.Empty, $"Failed to start '{fileName}'.");
         }
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(DefaultTimeout);
+        timeoutCts.CancelAfter(timeout);
+
+        // Both readers start before the wait so a child that fills a pipe buffer can't deadlock.
+        // They are bound to the timeout token, not the caller's, so a timeout actually unblocks them
+        // instead of relying on the kill closing the pipes.
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+        var stderrTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
 
         try
         {
@@ -413,11 +520,22 @@ internal sealed class PostActionExecutor
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             TryKill(process);
-            return new ProcessRunResult(-1, string.Empty, $"'{fileName} {arguments}' timed out after {DefaultTimeout.TotalMinutes:0} minutes.");
+
+            // Drain before `process` is disposed: abandoning in-flight reads on a disposed Process
+            // faults them with ObjectDisposedException that nobody observes. Partial output is also
+            // the only diagnostic available for a hung command, so it is reported rather than dropped.
+            var (partialOut, partialErr) = await DrainAsync(stdoutTask, stderrTask).ConfigureAwait(false);
+
+            return new ProcessRunResult(
+                -1,
+                partialOut,
+                $"'{fileName} {arguments}' timed out after {FormatTimeout(timeout)}."
+                    + (string.IsNullOrWhiteSpace(partialErr) ? string.Empty : Environment.NewLine + partialErr));
         }
         catch (OperationCanceledException)
         {
             TryKill(process);
+            await DrainAsync(stdoutTask, stderrTask).ConfigureAwait(false);
             throw;
         }
 
@@ -426,6 +544,62 @@ internal sealed class PostActionExecutor
 
         return new ProcessRunResult(process.ExitCode, stdout, stderr);
     }
+
+    /// <summary>
+    /// Awaits both reader tasks, swallowing the faults expected when the child was killed, so the
+    /// caller can dispose the process without leaving unobserved task exceptions behind.
+    /// </summary>
+    private static async Task<(string Stdout, string Stderr)> DrainAsync(Task<string> stdoutTask, Task<string> stderrTask)
+    {
+        var completed = await Task.WhenAny(
+            Task.WhenAll(stdoutTask, stderrTask),
+            Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+
+        return (ReadOrEmpty(stdoutTask), ReadOrEmpty(stderrTask));
+
+        static string ReadOrEmpty(Task<string> task)
+        {
+            if (!task.IsCompleted)
+            {
+                // Observe any later fault so it never reaches TaskScheduler.UnobservedTaskException.
+                _ = task.ContinueWith(
+                    t => _ = t.Exception,
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+                return string.Empty;
+            }
+
+            return task.IsCompletedSuccessfully ? task.Result : ObserveFault(task);
+        }
+
+        static string ObserveFault(Task<string> task)
+        {
+            _ = task.Exception;
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Wall-clock budget for a single post-action process. Five minutes is generous for a warm
+    /// cache but a large solution restoring cold can exceed it, so it is configurable.
+    /// </summary>
+    private static TimeSpan ResolveTimeout()    {
+        var raw = Environment.GetEnvironmentVariable(PostActionTimeoutEnvVar);
+        if (!string.IsNullOrWhiteSpace(raw)
+            && int.TryParse(raw.Trim(), out var seconds)
+            && seconds > 0)
+        {
+            return TimeSpan.FromSeconds(seconds);
+        }
+
+        return DefaultTimeout;
+    }
+
+    private static string FormatTimeout(TimeSpan timeout)
+        => timeout < TimeSpan.FromMinutes(1)
+            ? $"{timeout.TotalSeconds:0.##} seconds"
+            : $"{timeout.TotalMinutes:0.##} minutes";
 
     private static void TryKill(Process process)
     {

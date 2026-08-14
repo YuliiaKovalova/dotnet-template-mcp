@@ -52,7 +52,7 @@ internal static class NuGetVersionResolver
         CancellationToken cancellationToken = default)
     {
         var root = string.IsNullOrWhiteSpace(rootDirectory) ? Environment.CurrentDirectory : rootDirectory;
-        var scope = GetScopeKey(root, logger);
+        var scope = GetScopeKey(packageId, root, logger);
         var cacheKey = scope + "|" + packageId.ToLowerInvariant();
 
         // L1: in-memory cache
@@ -95,16 +95,11 @@ internal static class NuGetVersionResolver
     /// Builds a short, stable key describing which feeds apply to a directory, so cached versions
     /// are never reused across repositories configured against different sources.
     /// </summary>
-    private static string GetScopeKey(string rootDirectory, ILogger? logger)
+    private static string GetScopeKey(string packageId, string rootDirectory, ILogger? logger)
     {
         try
         {
-            var description = NuGetSourceResolver.DescribeSources(rootDirectory, logger);
-            var raw = string.Join(
-                "\n",
-                description.EnabledSources.OrderBy(s => s, StringComparer.OrdinalIgnoreCase));
-            raw += "\nmapping=" + description.PackageSourceMappingEnabled;
-
+            var raw = NuGetSourceResolver.GetSourceScopeIdentity(packageId, rootDirectory, logger);
             var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
             return Convert.ToHexString(hash, 0, 8).ToLowerInvariant();
         }

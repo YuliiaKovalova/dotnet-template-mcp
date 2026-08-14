@@ -53,7 +53,11 @@ internal sealed class CreateFromExistingTool
             }
 
             // 2. Generate the template
-            var resolvedOutputPath = outputPath ?? Path.Combine(Path.GetDirectoryName(projectPath)!, "..", "templates");
+            // The historical default (`<project>/../templates`) resolves *above* the project
+            // directory, which for the common repo-root layout lands outside the workspace root and
+            // would make the tool fail by default under confinement. When enforcement is on and the
+            // sibling default would escape, fall back to a `templates` folder under the root.
+            var resolvedOutputPath = outputPath ?? GetDefaultTemplateOutputPath(projectPath, featureFlags);
 
             var rejection = WorkspaceGuard.Validate(resolvedOutputPath, featureFlags);
             if (rejection != null)
@@ -153,6 +157,29 @@ internal sealed class CreateFromExistingTool
         {
             McpTelemetry.RecordDuration("template_create_from_existing", sw.Elapsed.TotalMilliseconds);
         }
+    }
+
+    /// <summary>
+    /// Resolves the default output directory for a generated template.
+    ///
+    /// The historical default is a <c>templates</c> folder next to the project's own directory.
+    /// That is convenient for a nested project layout but escapes the workspace root whenever the
+    /// project sits directly at the root, so under confinement it is clamped to
+    /// <c>&lt;workspace root&gt;/templates</c> rather than failing the call outright.
+    /// </summary>
+    private static string GetDefaultTemplateOutputPath(string projectPath, McpFeatureFlags featureFlags)
+    {
+        var projectDirectory = Path.GetDirectoryName(Path.GetFullPath(projectPath));
+        var sibling = string.IsNullOrEmpty(projectDirectory)
+            ? Path.Combine(featureFlags.WorkspaceRoot, "templates")
+            : Path.GetFullPath(Path.Combine(projectDirectory, "..", "templates"));
+
+        if (!featureFlags.WorkspaceEnforcementEnabled || WorkspaceGuard.Validate(sibling, featureFlags) == null)
+        {
+            return sibling;
+        }
+
+        return Path.Combine(featureFlags.WorkspaceRoot, "templates");
     }
 
     /// <summary>

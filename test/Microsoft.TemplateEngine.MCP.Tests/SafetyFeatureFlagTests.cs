@@ -136,4 +136,74 @@ public class SafetyFeatureFlagTests : IDisposable
 
         Assert.Equal(120, McpFeatureFlags.FromEnvironment([]).HttpRateLimitPerMinute);
     }
+
+    // --- Allow-anonymous parsing -----------------------------------------------------------------
+    // This flag *disables* authentication, so the permissive "anything that isn't 'false' means
+    // true" parsing used for enable-flags would turn a typo into an open server.
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("TRUE")]
+    [InlineData("1")]
+    [InlineData("yes")]
+    [InlineData("on")]
+    [InlineData(" true ")]
+    public void HttpAllowAnonymous_ExplicitAffirmative_OptsOut(string value)
+    {
+        SetEnv(McpFeatureFlags.HttpAllowAnonymousEnvVar, value);
+
+        var flags = McpFeatureFlags.FromEnvironment([]);
+        Assert.True(flags.HttpAllowAnonymous);
+        Assert.Null(flags.HttpAllowAnonymousInvalidValue);
+    }
+
+    [Theory]
+    [InlineData("false")]
+    [InlineData("0")]
+    [InlineData("no")]
+    [InlineData("off")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void HttpAllowAnonymous_NegativeOrUnset_KeepsAuthRequired(string? value)
+    {
+        SetEnv(McpFeatureFlags.HttpAllowAnonymousEnvVar, value);
+
+        var flags = McpFeatureFlags.FromEnvironment([]);
+        Assert.False(flags.HttpAllowAnonymous);
+        Assert.Null(flags.HttpAllowAnonymousInvalidValue);
+    }
+
+    [Theory]
+    [InlineData("nope")]
+    [InlineData("disabled")]
+    [InlineData("2")]
+    public void HttpAllowAnonymous_UnrecognizedValue_DoesNotDisableAuth(string value)
+    {
+        SetEnv(McpFeatureFlags.HttpAllowAnonymousEnvVar, value);
+
+        var flags = McpFeatureFlags.FromEnvironment([]);
+        Assert.False(flags.HttpAllowAnonymous);
+
+        // Surfaced so startup can refuse rather than silently guessing either way.
+        Assert.Equal(value, flags.HttpAllowAnonymousInvalidValue);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    public void OfflineMode_IsOptIn(string? value, bool expected)
+    {
+        SetEnv(McpFeatureFlags.OfflineEnvVar, value);
+
+        Assert.Equal(expected, McpFeatureFlags.FromEnvironment([]).OfflineMode);
+    }
+
+    [Fact]
+    public void BooleanFlags_TolerateSurroundingWhitespace()
+    {
+        SetEnv(McpFeatureFlags.PostActionsEnvVar, " false ");
+
+        Assert.False(McpFeatureFlags.FromEnvironment([]).PostActionsEnabled);
+    }
 }

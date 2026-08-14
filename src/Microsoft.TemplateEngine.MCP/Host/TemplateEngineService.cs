@@ -28,12 +28,46 @@ internal class TemplateEngineService : IDisposable
     private bool _sdkTemplatesInstalled;
 
     /// <summary>
+    /// How long a memoized template list stays valid.
+    ///
+    /// The cache is invalidated explicitly on install/uninstall through this service, but templates
+    /// can also be installed out of band (<c>dotnet new install</c> in another process, or a shared
+    /// SDK update). Without an expiry, that change would stay invisible until the server restarts.
+    /// Override with <c>MCP_TEMPLATE_CACHE_TTL_SECONDS</c>; <c>0</c> disables caching entirely.
+    /// </summary>
+    private static readonly TimeSpan TemplateCacheTtl = ResolveTemplateCacheTtl();
+
+    private static TimeSpan ResolveTemplateCacheTtl()
+    {
+        var raw = Environment.GetEnvironmentVariable("MCP_TEMPLATE_CACHE_TTL_SECONDS");
+        if (!string.IsNullOrWhiteSpace(raw)
+            && int.TryParse(raw.Trim(), out var seconds)
+            && seconds >= 0)
+        {
+            return TimeSpan.FromSeconds(seconds);
+        }
+
+        return TimeSpan.FromMinutes(5);
+    }
+
+    private sealed record CachedTemplates(IReadOnlyList<ITemplateInfo> Templates, DateTime ExpiresAt)
+    {
+        public bool IsExpired => DateTime.UtcNow >= ExpiresAt;
+    }
+
+    /// <summary>
     /// Memoized result of <see cref="GetTemplatesAsync"/>. The template set only changes when a
     /// package is installed or uninstalled, so it is cached for the process lifetime and
     /// explicitly invalidated by <see cref="InvalidateTemplateCache"/>. Without this, every tool
     /// call paid the full enumeration cost behind the first-call SDK package scan.
     /// </summary>
-    private IReadOnlyList<ITemplateInfo>? _templateCache;
+    /// <remarks>
+    /// <c>volatile</c> because the fast path reads this field outside the semaphore. Without it the
+    /// JIT is free to hoist the read, and there is no release/acquire pairing with the write made
+    /// under the lock, so a reader could observe a non-null reference before the list it points to
+    /// is fully published.
+    /// </remarks>
+    private volatile CachedTemplates? _templateCache;
 
     public TemplateEngineService(ILoggerFactory loggerFactory)
     {
@@ -241,9 +275,9 @@ internal class TemplateEngineService : IDisposable
     public virtual async Task<IReadOnlyList<ITemplateInfo>> GetTemplatesAsync(CancellationToken cancellationToken = default)
     {
         var cached = _templateCache;
-        if (cached != null)
+        if (cached != null && !cached.IsExpired)
         {
-            return cached;
+            return cached.Templates;
         }
 
         await _templateCacheSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -251,14 +285,14 @@ internal class TemplateEngineService : IDisposable
         {
             // Double-check after acquiring the lock — a concurrent caller may have populated it.
             cached = _templateCache;
-            if (cached != null)
+            if (cached != null && !cached.IsExpired)
             {
-                return cached;
+                return cached.Templates;
             }
 
             await EnsureSdkTemplatesInstalledAsync(cancellationToken).ConfigureAwait(false);
             var templates = await _bootstrapper.GetTemplatesAsync(cancellationToken).ConfigureAwait(false);
-            _templateCache = templates;
+            _templateCache = new CachedTemplates(templates, DateTime.UtcNow + TemplateCacheTtl);
             return templates;
         }
         finally

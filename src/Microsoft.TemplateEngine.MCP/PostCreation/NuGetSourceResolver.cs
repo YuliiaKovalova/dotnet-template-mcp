@@ -113,6 +113,33 @@ internal static class NuGetSourceResolver
             context.HasPackageSourceMapping);
     }
 
+    /// <summary>
+    /// Identity of the feed set that applies to <paramref name="rootDirectory"/> for a given
+    /// package, used to partition caches.
+    ///
+    /// Keyed on source <em>URLs</em>, not names: two organizations commonly both call their feed
+    /// "internal" (or override "nuget.org" to point at a proxy), and keying on the display name
+    /// would serve one repository's resolved versions to another with entirely different sources —
+    /// the exact cross-feed leak this scoping exists to prevent. The per-package allowed set is
+    /// included so a packageSourceMapping change invalidates the entry.
+    /// </summary>
+    public static string GetSourceScopeIdentity(string packageId, string rootDirectory, ILogger? logger)
+    {
+        var context = GetSourceContext(rootDirectory, logger);
+
+        var allSources = context.EnabledSources
+            .Select(s => s.Source ?? s.Name)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase);
+
+        var applicable = context.GetSourcesForPackage(packageId)
+            .Select(s => s.Source ?? s.Name)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase);
+
+        return string.Join("\n", allSources)
+            + "\nmapping=" + context.HasPackageSourceMapping
+            + "\napplicable=" + string.Join(",", applicable);
+    }
+
     /// <summary>Drop cached settings/repositories. Used by tests and after config changes.</summary>
     internal static void ClearCache()
     {

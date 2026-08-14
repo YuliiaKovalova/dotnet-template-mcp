@@ -300,4 +300,132 @@ public class PostActionExecutorTests : IDisposable
         Assert.Contains("Real.csproj", invocation.Arguments);
         Assert.DoesNotContain("Ghost.csproj", invocation.Arguments);
     }
+
+    // --- Solution search boundary ----------------------------------------------------------------
+    // The add-to-solution post-action modifies a .sln found by walking up from the output directory.
+    // Unbounded, that walk reaches solutions outside the workspace root and writes through the very
+    // boundary the workspace guard exists to enforce.
+
+    [Fact]
+    public void FindSolution_WithoutBoundary_WalksAboveTheWorkspaceRoot()
+    {
+        var outerSln = Path.Combine(_tempDir, "Outer.sln");
+        File.WriteAllText(outerSln, string.Empty);
+        var nested = Path.Combine(_tempDir, "root", "project");
+        Directory.CreateDirectory(nested);
+
+        Assert.Equal(outerSln, PostActionExecutor.FindSolution(nested));
+    }
+
+    [Fact]
+    public void FindSolution_StopsAtBoundary()
+    {
+        var outerSln = Path.Combine(_tempDir, "Outer.sln");
+        File.WriteAllText(outerSln, string.Empty);
+        var root = Path.Combine(_tempDir, "root");
+        var nested = Path.Combine(root, "project");
+        Directory.CreateDirectory(nested);
+
+        Assert.Null(PostActionExecutor.FindSolution(nested, root));
+    }
+
+    [Fact]
+    public void FindSolution_FindsSolutionAtTheBoundaryItself()
+    {
+        var root = Path.Combine(_tempDir, "root");
+        var nested = Path.Combine(root, "project");
+        Directory.CreateDirectory(nested);
+        var sln = Path.Combine(root, "App.sln");
+        File.WriteAllText(sln, string.Empty);
+
+        Assert.Equal(sln, PostActionExecutor.FindSolution(nested, root));
+    }
+
+    [Fact]
+    public void FindSolution_StartDirectoryOutsideBoundary_ReturnsNull()
+    {
+        var root = Path.Combine(_tempDir, "root");
+        Directory.CreateDirectory(root);
+        var outside = Path.Combine(_tempDir, "elsewhere");
+        Directory.CreateDirectory(outside);
+        File.WriteAllText(Path.Combine(outside, "Other.sln"), string.Empty);
+
+        Assert.Null(PostActionExecutor.FindSolution(outside, root));
+    }
+
+    // --- Argument quoting ------------------------------------------------------------------------
+
+    [Fact]
+    public void Quote_AlwaysQuotes_SoWhitespaceCannotSplitArguments()
+    {
+        Assert.Equal("\"plain\"", PostActionExecutor.Quote("plain"));
+        Assert.Equal("\"has space\"", PostActionExecutor.Quote("has space"));
+        Assert.Equal("\"has\ttab\"", PostActionExecutor.Quote("has\ttab"));
+    }
+
+    [Fact]
+    public void Quote_EscapesEmbeddedQuotes_SoExtraArgumentsCannotBeInjected()
+    {
+        // Legal filename on Unix; previously it closed the quoted argument and injected two more.
+        Assert.Equal("\"evil\\\" -p:X=Y \\\".csproj\"", PostActionExecutor.Quote("evil\" -p:X=Y \".csproj"));
+    }
+
+    [Fact]
+    public void Quote_DoublesBackslashRunsThatPrecedeAQuote()
+    {
+        // Per the CRT rules .NET applies to ProcessStartInfo.Arguments, a backslash is only special
+        // when it precedes a quote — including the closing quote this method adds. So the separator
+        // inside the path stays single, while the trailing run is doubled.
+        //   C:\dir\      ->  "C:\dir\\"
+        Assert.Equal("\"C:\\dir\\\\\"", PostActionExecutor.Quote("C:\\dir\\"));
+
+        //   a\"b         ->  "a\\\"b"
+        Assert.Equal("\"a\\\\\\\"b\"", PostActionExecutor.Quote("a\\\"b"));
+    }
+
+    // --- Real process execution ------------------------------------------------------------------
+    // Every other test here injects a fake runner, so the actual process/pipe/timeout path had no
+    // coverage at all.
+
+    [Fact]
+    public async Task RunProcess_SuccessfulCommand_CapturesStdoutAndExitCode()
+    {
+        var result = await PostActionExecutor.RunProcessCoreAsync(
+            "dotnet", "--version", _tempDir, TimeSpan.FromMinutes(2), CancellationToken.None);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.False(string.IsNullOrWhiteSpace(result.StandardOutput));
+    }
+
+    [Fact]
+    public async Task RunProcess_Timeout_KillsChildAndReportsWithoutUnobservedFaults()
+    {
+        var unobserved = new List<Exception>();
+        void Handler(object? sender, UnobservedTaskExceptionEventArgs e) => unobserved.Add(e.Exception);
+        TaskScheduler.UnobservedTaskException += Handler;
+
+        try
+        {
+            // `timeout.exe` refuses to run with redirected stdin, so use a sleeper that doesn't care.
+            var (fileName, arguments) = OperatingSystem.IsWindows()
+                ? ("cmd.exe", "/c ping -n 31 127.0.0.1")
+                : ("/bin/sh", "-c \"sleep 30\"");
+
+            var result = await PostActionExecutor.RunProcessCoreAsync(
+                fileName, arguments, _tempDir, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+            Assert.Equal(-1, result.ExitCode);
+            Assert.Contains("timed out", result.StandardError, StringComparison.OrdinalIgnoreCase);
+
+            // The abandoned pipe reads must not surface later as unobserved task exceptions.
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            Assert.Empty(unobserved);
+        }
+        finally
+        {
+            TaskScheduler.UnobservedTaskException -= Handler;
+        }
+    }
 }

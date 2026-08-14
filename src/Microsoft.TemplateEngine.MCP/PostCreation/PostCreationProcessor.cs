@@ -19,6 +19,27 @@ internal sealed class PostCreationProcessor
     /// </summary>
     public const PackageVersionPolicy DefaultVersionPolicy = PackageVersionPolicy.Report;
 
+    /// <summary>
+    /// Maps a tool's optional <c>resolveLatestVersions</c> argument to a policy.
+    ///
+    /// Single-sourced deliberately: the tool and the <c>bool</c> overload previously disagreed about
+    /// what <c>false</c> meant (one reported — still querying feeds — while the other skipped), which
+    /// left callers with no way to opt out of network access at all.
+    /// </summary>
+    /// <param name="resolveLatestVersions">
+    /// <c>true</c> to apply upgrades, <c>false</c> to make no feed calls, <c>null</c> to use the
+    /// configured default.
+    /// </param>
+    public static PackageVersionPolicy ResolvePolicy(bool? resolveLatestVersions, McpFeatureFlags featureFlags)
+        => resolveLatestVersions switch
+        {
+            true => PackageVersionPolicy.Apply,
+            false => PackageVersionPolicy.Skip,
+            null when featureFlags.OfflineMode => PackageVersionPolicy.Skip,
+            null when featureFlags.ResolveLatestVersionsByDefault => PackageVersionPolicy.Apply,
+            null => DefaultVersionPolicy,
+        };
+
     private readonly ILogger _logger;
 
     public PostCreationProcessor(ILoggerFactory loggerFactory)

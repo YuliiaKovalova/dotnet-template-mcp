@@ -21,6 +21,20 @@ public class PackageVersionPolicyTests : IDisposable
     {
         _tempDir = Path.Combine(Path.GetTempPath(), $"mcp-policy-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
+
+        // Isolate from the machine's NuGet configuration so these tests never depend on a reachable
+        // feed. Without this, Report policy performs real lookups whose NuGet-client defaults
+        // (~100s per request, with retries) make the suite slow and flaky on restricted networks.
+        File.WriteAllText(
+            Path.Combine(_tempDir, "NuGet.config"),
+            """
+            <?xml version="1.0" encoding="utf-8"?>
+            <configuration>
+              <packageSources>
+                <clear />
+              </packageSources>
+            </configuration>
+            """);
     }
 
     public void Dispose()
@@ -118,4 +132,38 @@ public class PackageVersionPolicyTests : IDisposable
 
         Assert.Equal(PackageVersionPolicy.Apply, result.VersionPolicy);
     }
+
+    // --- Tool-argument mapping -------------------------------------------------------------------
+    // Regression: the tool mapped `false` to Report (which still queries feeds) while the processor
+    // mapped it to Skip. Skip was therefore unreachable from any tool, leaving no offline path.
+
+    [Fact]
+    public void ResolvePolicy_True_Applies()
+        => Assert.Equal(PackageVersionPolicy.Apply, PostCreationProcessor.ResolvePolicy(true, new McpFeatureFlags()));
+
+    [Fact]
+    public void ResolvePolicy_False_SkipsWithoutContactingAnyFeed()
+        => Assert.Equal(PackageVersionPolicy.Skip, PostCreationProcessor.ResolvePolicy(false, new McpFeatureFlags()));
+
+    [Fact]
+    public void ResolvePolicy_Omitted_Reports()
+        => Assert.Equal(PackageVersionPolicy.Report, PostCreationProcessor.ResolvePolicy(null, new McpFeatureFlags()));
+
+    [Fact]
+    public void ResolvePolicy_Omitted_OfflineMode_Skips()
+        => Assert.Equal(
+            PackageVersionPolicy.Skip,
+            PostCreationProcessor.ResolvePolicy(null, new McpFeatureFlags { OfflineMode = true }));
+
+    [Fact]
+    public void ResolvePolicy_Omitted_LegacyEscapeHatch_Applies()
+        => Assert.Equal(
+            PackageVersionPolicy.Apply,
+            PostCreationProcessor.ResolvePolicy(null, new McpFeatureFlags { ResolveLatestVersionsByDefault = true }));
+
+    [Fact]
+    public void ResolvePolicy_ExplicitFalse_BeatsLegacyEscapeHatch()
+        => Assert.Equal(
+            PackageVersionPolicy.Skip,
+            PostCreationProcessor.ResolvePolicy(false, new McpFeatureFlags { ResolveLatestVersionsByDefault = true }));
 }

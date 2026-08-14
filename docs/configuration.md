@@ -151,12 +151,15 @@ Connect your MCP client to the HTTP endpoint:
 | `MCP_TEMPLATE_TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `MCP_TEMPLATE_HTTP_URL` | `http://localhost:5005` | Listen URL for HTTP transport |
 | `MCP_TEMPLATE_HTTP_TOKEN` | _(unset)_ | Bearer token required on `/mcp`. Without it the HTTP transport refuses to start |
-| `MCP_TEMPLATE_HTTP_ALLOW_ANONYMOUS` | `false` | Explicitly permit unauthenticated HTTP. Only for a trusted, isolated network |
-| `MCP_TEMPLATE_HTTP_RATE_LIMIT` | `120` | Requests per minute per client on `/mcp`. `0` disables limiting |
-| `MCP_TEMPLATE_WORKSPACE_ROOT` | process working directory | Root that all file writes must stay inside |
+| `MCP_TEMPLATE_HTTP_ALLOW_ANONYMOUS` | `false` | Explicitly permit unauthenticated HTTP. Only for a trusted, isolated network. Must be a recognized boolean (`true`/`false`/`1`/`0`/`yes`/`no`/`on`/`off`) — anything else is a startup error rather than a silent opt-out |
+| `MCP_TEMPLATE_HTTP_RATE_LIMIT` | `120` | Requests per minute per remote address. `0` disables limiting. `/health` is never throttled |
+| `MCP_TEMPLATE_WORKSPACE_ROOT` | process working directory | Root that all file reads and writes must stay inside |
 | `MCP_TEMPLATE_WORKSPACE_ENFORCEMENT` | `true` | Set `false` to allow writes to any path (not recommended over HTTP) |
 | `MCP_TEMPLATE_POST_ACTIONS` | `true` | Run safe post-actions (restore, add-to-solution) after instantiation |
+| `MCP_TEMPLATE_POST_ACTION_TIMEOUT_SECONDS` | `300` | Wall-clock budget for a single post-action process. Raise for large solutions on a cold NuGet cache |
 | `MCP_TEMPLATE_RESOLVE_LATEST_VERSIONS` | `false` | Apply latest stable NuGet versions at creation instead of only reporting them |
+| `MCP_TEMPLATE_OFFLINE` | `false` | Contact no NuGet feed for version resolution. Package versions are left exactly as the template authored them |
+| `MCP_TEMPLATE_CACHE_TTL_SECONDS` | `300` | How long the template list stays memoized. `0` disables caching, so out-of-band `dotnet new install` is picked up immediately |
 | `MCP_TEMPLATE_INTENT_RESOLUTION` | `true` | Enable/disable `template_from_intent` tool |
 | `MCP_TEMPLATE_ELICITATION` | `true` | Enable/disable interactive parameter elicitation |
 

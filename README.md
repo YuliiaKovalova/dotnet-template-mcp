@@ -131,7 +131,7 @@ MCP_TEMPLATE_HTTP_TOKEN=<shared-secret> template-engine-mcp --transport http
 MCP_TEMPLATE_HTTP_ALLOW_ANONYMOUS=true template-engine-mcp --transport http
 ```
 
-Clients authenticate with `Authorization: Bearer <shared-secret>`. Requests to `/mcp` are rate limited per client (default 120/minute, `MCP_TEMPLATE_HTTP_RATE_LIMIT=0` disables). `/health` stays anonymous for probes.
+Clients authenticate with `Authorization: Bearer <shared-secret>`. Requests are rate limited per remote address (default 120/minute, `MCP_TEMPLATE_HTTP_RATE_LIMIT=0` disables); the limiter runs ahead of the token check, so failed authentication attempts consume budget, and it partitions on the remote address rather than the `Authorization` header — keying on a caller-supplied header would let any client mint a fresh budget by rotating it. `/health` stays anonymous and unthrottled for probes.
 
 > **Not multi-tenant.** `TemplateEngineService` is a process-wide singleton with `virtualizeSettings: false`, so the installed-template set is shared by every caller, and the workspace root is process-wide. Run one instance per trusted team or per tenant — do not expose a single instance to mutually untrusting users.
 

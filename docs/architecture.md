@@ -80,8 +80,10 @@ After template instantiation, the server automatically adapts the output to the 
 - Failures never throw: they are captured in the report so already-created files are still returned. `continueOnError` actions are non-blocking
 
 **Path Confinement:**
-- `WorkspaceGuard` validates every caller-supplied write path against `MCP_TEMPLATE_WORKSPACE_ROOT`
-- Resolves symlinks (`ResolveLinkTarget(returnFinalTarget: true)`) so a link inside the workspace cannot redirect writes outside it, and uses a trailing-separator root so `C:\work-other` does not match root `C:\work`
+- `WorkspaceGuard` validates every caller-supplied read/write path against `MCP_TEMPLATE_WORKSPACE_ROOT`
+- Resolves links (`ResolveLinkTarget(returnFinalTarget: true)`) at **every** level of the path, not just the deepest existing component: `Directory.Exists` succeeds straight through an ancestor junction, so resolving only the leaf would miss the redirection entirely. The workspace root is resolved the same way, so a root that is itself a link (Dev Drive, redirected profile, `/tmp` on macOS) still matches instead of rejecting every write. A trailing-separator comparison keeps `C:\work-other` from matching root `C:\work`
+- Paths composed *after* validation are re-validated. `template_instantiate` builds its default output from the caller's `name` and the template's own `DefaultName`, both untrusted, and `Path.Combine` resolves `..` out of the root — so the effective path is checked, and a `name` carrying path syntax is rejected outright
+- The add-to-solution post-action's upward `.sln` search stops at the workspace root, so it cannot modify a solution outside the boundary
 
 **Standalone Package Upgrades:**
 - `packages_upgrade` scans an existing `.csproj`, `.sln`/`.slnx`, or directory (independent of template creation) for outdated NuGet versions

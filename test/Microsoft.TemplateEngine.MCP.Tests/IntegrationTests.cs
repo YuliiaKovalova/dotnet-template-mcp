@@ -164,6 +164,37 @@ public class IntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task TemplateInstantiate_TraversalInName_WithNoOutputPath_IsRejected()
+    {
+        // Regression: the guard originally validated the raw `outputPath` parameter. When it was
+        // omitted, the effective path was composed afterwards from `name`, so a name carrying
+        // `../` escaped the workspace root entirely and nothing re-checked it.
+        var escapeTarget = Path.Combine(Path.GetDirectoryName(_tempDir.TrimEnd(Path.DirectorySeparatorChar))!, $"mcp-escaped-{Guid.NewGuid():N}");
+        var relativeEscape = Path.Combine("..", Path.GetFileName(escapeTarget));
+
+        var result = await TemplateInstantiateTool.InstantiateTemplateAsync(
+            _service, _postProcessor, _postActionExecutor, _featureFlags, null!, "console", relativeEscape, null);
+
+        var parsed = JsonSerializer.Deserialize<JsonElement>(result);
+        Assert.True(parsed.TryGetProperty("errorCode", out var code), $"Expected a rejection, got: {result}");
+        Assert.Equal("path_outside_workspace", code.GetString());
+        Assert.False(Directory.Exists(escapeTarget), "Files were written outside the workspace root.");
+    }
+
+    [Fact]
+    public async Task TemplateInstantiate_DefaultOutputPath_StaysInsideWorkspaceRoot()
+    {
+        // The complement of the traversal test: a plain name must still work with no outputPath,
+        // otherwise the fix above would have been "reject everything".
+        var result = await TemplateInstantiateTool.InstantiateTemplateAsync(
+            _service, _postProcessor, _postActionExecutor, _featureFlags, null!, "console", "DefaultPathApp", null);
+
+        var parsed = JsonSerializer.Deserialize<JsonElement>(result);
+        Assert.Equal("Success", parsed.GetProperty("Status").GetString());
+        Assert.True(Directory.Exists(Path.Combine(_tempDir, "DefaultPathApp")));
+    }
+
+    [Fact]
     public async Task TemplateList_ReturnsInstalledTemplates()
     {
         var result = await TemplateListTool.ListTemplatesAsync(_service, new McpFeatureFlags());

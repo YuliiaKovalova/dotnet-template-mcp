@@ -27,7 +27,7 @@ internal sealed class TemplateInstantiateTool
         [Description("Name for the created project/item")] string? name = null,
         [Description("Output directory path where files will be created")] string? outputPath = null,
         [Description("JSON object of parameter name-value pairs (e.g., {\"Framework\": \"net8.0\", \"EnableAot\": \"true\"})")] string? parametersJson = null,
-        [Description("If true, rewrite package references to the latest stable NuGet versions. Omit to use the server default, which reports available upgrades without changing the versions the template author pinned.")] bool? resolveLatestVersions = null,
+        [Description("If true, rewrite package references to the latest stable NuGet versions. If false, make no NuGet feed calls at all and leave versions untouched. Omit to use the server default, which queries feeds and reports available upgrades without changing the versions the template author pinned.")] bool? resolveLatestVersions = null,
         [Description("If false, skip the template's restore and add-to-solution post-actions (default: true)")] bool runPostActions = true,
         CancellationToken cancellationToken = default)
     {
@@ -38,7 +38,11 @@ internal sealed class TemplateInstantiateTool
         string? autoInstallMessage = null;
 
         // 0. Reject writes outside the permitted workspace before doing any work.
-        var pathRejection = WorkspaceGuard.Validate(outputPath, featureFlags);
+        // The raw parameter is checked here for a fast, pre-work failure; the *effective* path is
+        // re-validated after it is composed (step 7), because it is also built from `name` and from
+        // the template's own DefaultName, neither of which is trusted.
+        var pathRejection = WorkspaceGuard.Validate(outputPath, featureFlags)
+            ?? WorkspaceGuard.ValidateNameSegment(name);
         if (pathRejection != null)
         {
             McpTelemetry.RecordError(activity, "template_instantiate", pathRejection);
@@ -127,6 +131,16 @@ internal sealed class TemplateInstantiateTool
         // 7. Instantiate
         string resolvedOutputPath = outputPath ?? Path.Combine(featureFlags.WorkspaceRoot, name ?? template.DefaultName ?? "NewProject");
 
+        // Re-validate the path that will actually be written. `name` and `template.DefaultName` are
+        // untrusted (DefaultName comes from the template package, which may have just been installed
+        // from NuGet by auto-resolve), and Path.Combine happily resolves "../.." out of the root.
+        var resolvedRejection = WorkspaceGuard.Validate(resolvedOutputPath, featureFlags);
+        if (resolvedRejection != null)
+        {
+            McpTelemetry.RecordError(activity, "template_instantiate", resolvedRejection);
+            return WorkspaceGuard.PathRejectedError(resolvedRejection);
+        }
+
         var result = await engineService.CreateAsync(template, name, resolvedOutputPath, parameters, cancellationToken).ConfigureAwait(false);
 
         McpTelemetry.TemplatesCreated.Add(1);
@@ -140,9 +154,11 @@ internal sealed class TemplateInstantiateTool
 
         if (result.Status == Microsoft.TemplateEngine.Edge.Template.CreationResultStatus.Success)
         {
-            var versionPolicy = (resolveLatestVersions ?? featureFlags.ResolveLatestVersionsByDefault)
-                ? PackageVersionPolicy.Apply
-                : PackageVersionPolicy.Report;
+            // Tri-state, deliberately: `true` applies upgrades, `false` is a genuine opt-out that
+            // performs no feed lookups at all (the offline path), and omitting the parameter reports
+            // available upgrades without writing them. Mapping `false` to Report would make the
+            // opt-out still hit the network, which breaks offline and air-gapped callers.
+            var versionPolicy = PostCreationProcessor.ResolvePolicy(resolveLatestVersions, featureFlags);
 
             try
             {
