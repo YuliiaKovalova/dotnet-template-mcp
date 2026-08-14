@@ -19,6 +19,7 @@ public class IntegrationTests : IDisposable
 {
     private readonly TemplateEngineService _service;
     private readonly PostCreationProcessor _postProcessor;
+    private readonly PostActionExecutor _postActionExecutor;
     private readonly McpFeatureFlags _featureFlags;
     private readonly string _tempDir;
 
@@ -27,9 +28,18 @@ public class IntegrationTests : IDisposable
         var loggerFactory = LoggerFactory.Create(builder => builder.AddDebug());
         _service = new TemplateEngineService(loggerFactory);
         _postProcessor = new PostCreationProcessor(loggerFactory);
-        _featureFlags = new McpFeatureFlags { ElicitationEnabled = false };
+        _postActionExecutor = new PostActionExecutor(loggerFactory);
         _tempDir = Path.Combine(Path.GetTempPath(), $"mcp-integration-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
+
+        // Scope the workspace to the test's temp directory so the path guard permits it, and keep
+        // post-actions off so these tests stay hermetic (no dotnet restore / network).
+        _featureFlags = new McpFeatureFlags
+        {
+            ElicitationEnabled = false,
+            WorkspaceRoot = _tempDir,
+            PostActionsEnabled = false,
+        };
     }
 
     public void Dispose()
@@ -125,7 +135,7 @@ public class IntegrationTests : IDisposable
         var outputPath = Path.Combine(_tempDir, "InstantiateTest");
 
         var result = await TemplateInstantiateTool.InstantiateTemplateAsync(
-            _service, _postProcessor, _featureFlags, null!, "console", "TestConsoleApp", outputPath);
+            _service, _postProcessor, _postActionExecutor, _featureFlags, null!, "console", "TestConsoleApp", outputPath);
 
         var parsed = JsonSerializer.Deserialize<JsonElement>(result);
         Assert.Equal("Success", parsed.GetProperty("Status").GetString());
@@ -142,7 +152,7 @@ public class IntegrationTests : IDisposable
         var outputPath = Path.Combine(_tempDir, "ValidationTest");
 
         var result = await TemplateInstantiateTool.InstantiateTemplateAsync(
-            _service, _postProcessor, _featureFlags, null!, "console", "ValidationApp", outputPath,
+            _service, _postProcessor, _postActionExecutor, _featureFlags, null!, "console", "ValidationApp", outputPath,
             "{\"Framework\": \"net3.0\"}");
 
         var parsed = JsonSerializer.Deserialize<JsonElement>(result);

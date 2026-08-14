@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.TemplateEngine.MCP.Host;
 using Microsoft.TemplateEngine.MCP.PostCreation;
+using Microsoft.TemplateEngine.MCP.Security;
 using ModelContextProtocol.Server;
 using ITemplateCreationResult = Microsoft.TemplateEngine.Edge.Template.ITemplateCreationResult;
 
@@ -15,17 +16,19 @@ namespace Microsoft.TemplateEngine.MCP.Tools;
 internal sealed class TemplateInstantiateTool
 {
     [McpServerTool(Name = "template_instantiate")]
-    [Description("Create a project or item from a template — the main tool for project scaffolding. Auto-installs from NuGet if missing, validates parameters before writing files, applies smart defaults, and adapts for Central Package Management. Prefer this over running 'dotnet new' directly.")]
+    [Description("Create a project or item from a template — the main tool for project scaffolding. Auto-installs from NuGet if missing, validates parameters before writing files, applies smart defaults, adapts for Central Package Management, and runs the template's restore and add-to-solution post-actions. Prefer this over running 'dotnet new' directly.")]
     public static async Task<string> InstantiateTemplateAsync(
         TemplateEngineService engineService,
         PostCreationProcessor postProcessor,
+        PostActionExecutor postActionExecutor,
         McpFeatureFlags featureFlags,
         McpServer server,
         [Description("Template identity or short name")] string templateName,
         [Description("Name for the created project/item")] string? name = null,
         [Description("Output directory path where files will be created")] string? outputPath = null,
         [Description("JSON object of parameter name-value pairs (e.g., {\"Framework\": \"net8.0\", \"EnableAot\": \"true\"})")] string? parametersJson = null,
-        [Description("If true, resolve latest stable NuGet versions for all package references (default: true)")] bool resolveLatestVersions = true,
+        [Description("If true, rewrite package references to the latest stable NuGet versions. Omit to use the server default, which reports available upgrades without changing the versions the template author pinned.")] bool? resolveLatestVersions = null,
+        [Description("If false, skip the template's restore and add-to-solution post-actions (default: true)")] bool runPostActions = true,
         CancellationToken cancellationToken = default)
     {
         using var activity = McpTelemetry.StartToolActivity("template_instantiate");
@@ -33,6 +36,14 @@ internal sealed class TemplateInstantiateTool
         try
         {
         string? autoInstallMessage = null;
+
+        // 0. Reject writes outside the permitted workspace before doing any work.
+        var pathRejection = WorkspaceGuard.Validate(outputPath, featureFlags);
+        if (pathRejection != null)
+        {
+            McpTelemetry.RecordError(activity, "template_instantiate", pathRejection);
+            return WorkspaceGuard.PathRejectedError(pathRejection);
+        }
 
         // 1. Find template locally
         var template = await engineService.FindTemplateAsync(templateName, cancellationToken).ConfigureAwait(false);
@@ -114,33 +125,68 @@ internal sealed class TemplateInstantiateTool
         var constraintWarnings = TemplateEngineService.CheckConstraints(template);
 
         // 7. Instantiate
-        string resolvedOutputPath = outputPath ?? Path.Combine(Environment.CurrentDirectory, name ?? template.DefaultName ?? "NewProject");
+        string resolvedOutputPath = outputPath ?? Path.Combine(featureFlags.WorkspaceRoot, name ?? template.DefaultName ?? "NewProject");
 
         var result = await engineService.CreateAsync(template, name, resolvedOutputPath, parameters, cancellationToken).ConfigureAwait(false);
 
         McpTelemetry.TemplatesCreated.Add(1);
         activity?.SetTag("mcp.template.identity", template.Identity);
 
-        // 8. Post-creation processing: CPM adaptation + NuGet version upgrades
+        // 8. Post-creation processing: CPM adaptation + NuGet version reporting/upgrades
         PostCreationResult? postCreationResult = null;
         string? postCreationError = null;
+        PostActionExecutionReport? postActionReport = null;
+        string? postActionError = null;
+
         if (result.Status == Microsoft.TemplateEngine.Edge.Template.CreationResultStatus.Success)
         {
+            var versionPolicy = (resolveLatestVersions ?? featureFlags.ResolveLatestVersionsByDefault)
+                ? PackageVersionPolicy.Apply
+                : PackageVersionPolicy.Report;
+
             try
             {
                 postCreationResult = await postProcessor.ProcessAsync(
-                    resolvedOutputPath, resolveLatestVersions, cancellationToken).ConfigureAwait(false);
+                    resolvedOutputPath, versionPolicy, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 postCreationError = $"Project created successfully, but post-processing failed: {ex.Message}. " +
-                    "The project files are on disk but CPM adaptation and NuGet version upgrades were not applied.";
+                    "The project files are on disk but CPM adaptation and NuGet version handling were not applied.";
                 McpTelemetry.RecordError(activity, "template_instantiate", $"Post-processing failed: {ex.Message}");
+            }
+
+            // 9. Run the template's safe post-actions (restore, add-to-solution). Without this the
+            // project is left unrestored and unregistered in the surrounding solution.
+            if (runPostActions && featureFlags.PostActionsEnabled)
+            {
+                try
+                {
+                    postActionReport = await postActionExecutor.ExecuteAsync(
+                        result, resolvedOutputPath, cancellationToken).ConfigureAwait(false);
+
+                    if (postActionReport.Executed.Count > 0)
+                    {
+                        McpTelemetry.PostActionsExecuted.Add(postActionReport.Executed.Count);
+                    }
+
+                    if (postActionReport.HasBlockingFailure)
+                    {
+                        McpTelemetry.RecordError(activity, "template_instantiate", "A required post-action failed.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    postActionError = $"Project created successfully, but post-actions failed: {ex.Message}. " +
+                        "Run 'dotnet restore' manually in the output directory.";
+                    McpTelemetry.RecordError(activity, "template_instantiate", $"Post-actions failed: {ex.Message}");
+                }
             }
         }
 
         return SerializeCreationResult(result, autoInstallMessage, constraintWarnings,
-            smartDefaults.Count > 0 ? smartDefaults : null, postCreationResult, postCreationError);
+            smartDefaults.Count > 0 ? smartDefaults : null, postCreationResult, postCreationError,
+            postActionReport, postActionError);
         }
         finally
         {
@@ -187,7 +233,9 @@ internal sealed class TemplateInstantiateTool
         IReadOnlyList<string>? constraintWarnings = null,
         IReadOnlyDictionary<string, string>? appliedSmartDefaults = null,
         PostCreationResult? postCreationResult = null,
-        string? postCreationError = null)
+        string? postCreationError = null,
+        PostActionExecutionReport? postActionReport = null,
+        string? postActionError = null)
     {
         var postActions = result.CreationResult?.PostActions?.Select(pa => new
         {
@@ -208,7 +256,7 @@ internal sealed class TemplateInstantiateTool
 
         // Build post-creation summary
         object? postCreationSummary = null;
-        if (postCreationResult?.HasChanges == true)
+        if (postCreationResult?.HasFindings == true)
         {
             var allUpgrades = postCreationResult.ProcessedFiles
                 .SelectMany(f => f.VersionUpgrades)
@@ -225,13 +273,52 @@ internal sealed class TemplateInstantiateTool
                 .Select(e => new { e.PackageName, e.Version })
                 .ToList();
 
+            bool applied = postCreationResult.VersionUpgradesApplied;
+
             postCreationSummary = new
             {
                 CpmDetected = postCreationResult.CpmDetected,
                 DirectoryPackagesPropsPath = postCreationResult.DirectoryPackagesPropsPath,
-                VersionUpgrades = allUpgrades.Count > 0 ? allUpgrades : null,
+                VersionPolicy = postCreationResult.VersionPolicy.ToString(),
+
+                // Applied upgrades were written to disk; available ones were not.
+                VersionUpgrades = applied && allUpgrades.Count > 0 ? allUpgrades : null,
+                AvailableVersionUpgrades = !applied && allUpgrades.Count > 0 ? allUpgrades : null,
+                AvailableVersionUpgradesHint = !applied && allUpgrades.Count > 0
+                    ? "Versions were left as the template author pinned them. Re-run with resolveLatestVersions=true, or use packages_upgrade with apply=true, to write these."
+                    : null,
+
                 VersionsStrippedFromCsproj = allStripped.Count > 0 ? allStripped : null,
                 AddedToDirectoryPackagesProps = allAddedToProps.Count > 0 ? allAddedToProps : null,
+            };
+        }
+
+        object? postActionSummary = null;
+        if (postActionReport?.HasAnything == true)
+        {
+            postActionSummary = new
+            {
+                Executed = postActionReport.Executed.Count > 0
+                    ? postActionReport.Executed.Select(e => new
+                    {
+                        e.ActionId,
+                        e.Description,
+                        e.Command,
+                        e.Success,
+                        e.Error,
+                        e.ManualInstructions,
+                    }).ToList()
+                    : null,
+                Skipped = postActionReport.Skipped.Count > 0
+                    ? postActionReport.Skipped.Select(s => new
+                    {
+                        s.ActionId,
+                        s.Description,
+                        s.Reason,
+                        s.ManualInstructions,
+                    }).ToList()
+                    : null,
+                HasBlockingFailure = postActionReport.HasBlockingFailure,
             };
         }
 
@@ -246,6 +333,8 @@ internal sealed class TemplateInstantiateTool
             AppliedSmartDefaults = appliedSmartDefaults?.Count > 0 ? appliedSmartDefaults : null,
             PostCreation = postCreationSummary,
             PostCreationError = postCreationError,
+            PostActionExecution = postActionSummary,
+            PostActionError = postActionError,
             PrimaryOutputs = primaryOutputs,
             PostActions = postActions,
             FileChanges = fileChanges,
