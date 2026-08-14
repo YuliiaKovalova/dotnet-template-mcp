@@ -57,7 +57,7 @@ internal sealed class TemplateComposeTool
                     new JsonSerializerOptions { WriteIndented = true });
             }
 
-            var facade = new TemplateEngineFacade(engineService);
+            var facade = new TemplateEngineFacade(engineService, featureFlags);
             var result = await facade.ComposeAsync(steps, cancellationToken).ConfigureAwait(false);
 
             activity?.SetTag("mcp.compose.steps", steps.Count);
