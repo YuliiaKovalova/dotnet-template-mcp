@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) 2025 Yuliia Kovalova.
+// Licensed under the MIT license. See LICENSE in the repository root for details.
 
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
@@ -58,6 +58,7 @@ internal sealed class PostActionExecutor
     public async Task<PostActionExecutionReport> ExecuteAsync(
         ITemplateCreationResult creationResult,
         string outputDirectory,
+        string? boundaryDirectory = null,
         CancellationToken cancellationToken = default)
     {
         var report = new PostActionExecutionReport();
@@ -87,7 +88,7 @@ internal sealed class PostActionExecutor
                 else if (postAction.ActionId == AddProjectToSolutionActionId)
                 {
                     report.Executed.Add(await RunAddToSolutionAsync(
-                        postAction, primaryOutputs, outputDirectory, cancellationToken).ConfigureAwait(false));
+                        postAction, primaryOutputs, outputDirectory, boundaryDirectory, cancellationToken).ConfigureAwait(false));
                 }
                 else
                 {
@@ -158,9 +159,10 @@ internal sealed class PostActionExecutor
         IPostAction postAction,
         IReadOnlyList<string> primaryOutputs,
         string outputDirectory,
+        string? boundaryDirectory,
         CancellationToken cancellationToken)
     {
-        var solutionPath = FindSolution(outputDirectory);
+        var solutionPath = FindSolution(outputDirectory, boundaryDirectory);
         if (solutionPath == null)
         {
             return new ExecutedPostAction(
@@ -170,7 +172,9 @@ internal sealed class PostActionExecutor
                 Success: false,
                 ContinueOnError: true,
                 Output: null,
-                Error: "No .sln or .slnx file found in the output directory or any parent directory.",
+                Error: boundaryDirectory == null
+                    ? "No .sln or .slnx file found in the output directory or any parent directory."
+                    : $"No .sln or .slnx file found between the output directory and the workspace root '{boundaryDirectory}'.",
                 ManualInstructions: postAction.ManualInstructions);
         }
 
@@ -276,12 +280,35 @@ internal sealed class PostActionExecutor
         return result;
     }
 
-    /// <summary>Walks up from the output directory looking for a solution file.</summary>
-    internal static string? FindSolution(string startDirectory)
+    /// <summary>
+    /// Walks up from the output directory looking for a solution file, stopping at
+    /// <paramref name="boundaryDirectory"/> (inclusive) when one is supplied.
+    ///
+    /// The boundary matters: without it the walk continues to the filesystem root, so creating a
+    /// project inside the workspace could run <c>dotnet sln add</c> against a solution belonging to
+    /// an unrelated repository above it — a write outside the confinement the workspace root is
+    /// supposed to provide.
+    /// </summary>
+    internal static string? FindSolution(string startDirectory, string? boundaryDirectory = null)
     {
         try
         {
             var dir = Path.GetFullPath(startDirectory);
+            string? boundary = string.IsNullOrWhiteSpace(boundaryDirectory)
+                ? null
+                : Path.GetFullPath(boundaryDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            var comparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+
+            // A start directory outside the boundary means the caller already opted out of
+            // confinement for this path; searching above it would be worse, so search nothing.
+            if (boundary != null && !IsAtOrBelow(dir, boundary, comparison))
+            {
+                return null;
+            }
+
             while (!string.IsNullOrEmpty(dir))
             {
                 if (Directory.Exists(dir))
@@ -295,6 +322,13 @@ internal sealed class PostActionExecutor
                     {
                         return solution;
                     }
+                }
+
+                if (boundary != null
+                    && dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        .Equals(boundary, comparison))
+                {
+                    break;
                 }
 
                 var parent = Path.GetDirectoryName(dir);
@@ -312,6 +346,13 @@ internal sealed class PostActionExecutor
         }
 
         return null;
+    }
+
+    private static bool IsAtOrBelow(string candidate, string boundaryNoSeparator, StringComparison comparison)
+    {
+        var trimmed = candidate.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return trimmed.Equals(boundaryNoSeparator, comparison)
+            || trimmed.StartsWith(boundaryNoSeparator + Path.DirectorySeparatorChar, comparison);
     }
 
     private static bool IsProjectFile(string path)

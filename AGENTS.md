@@ -66,13 +66,15 @@ internal sealed class MyTool
 
 4. **Telemetry** — Every tool must call `McpTelemetry.StartToolActivity()` and `McpTelemetry.RecordDuration()`. Use `McpTelemetry.RecordError()` for failures.
 
-5. **Return format** — Tools return JSON strings via `JsonSerializer.Serialize(new { ... }, new JsonSerializerOptions { WriteIndented = true })`. Errors use `{ error, hint }` shape.
+5. **Return format** — Tools return JSON strings via `JsonSerializer.Serialize(new { ... }, new JsonSerializerOptions { WriteIndented = true })`. Errors go through `McpErrorResponse.Serialize(...)`, which emits `{ error, errorCode, suggestion, retryable, details }` — do not hand-roll an error shape.
 
 6. **File header** — Every `.cs` file starts with:
    ```csharp
-   // Licensed to the .NET Foundation under one or more agreements.
-   // The .NET Foundation licenses this file to you under the MIT license.
+   // Copyright (c) 2025 Yuliia Kovalova.
+   // Licensed under the MIT license. See LICENSE in the repository root for details.
    ```
+   This project is **not** a Microsoft or .NET Foundation project. Do not add
+   `Licensed to the .NET Foundation` headers or Microsoft copyright attribution.
 
 ## PR Workflow
 

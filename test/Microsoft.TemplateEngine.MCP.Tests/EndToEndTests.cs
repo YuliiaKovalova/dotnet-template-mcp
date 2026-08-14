@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) 2025 Yuliia Kovalova.
+// Licensed under the MIT license. See LICENSE in the repository root for details.
 
 using System.Diagnostics;
 using System.Text.Json;
@@ -176,13 +176,102 @@ public class EndToEndTests : IDisposable
         _output.WriteLine("  WebAPI with controllers built successfully!");
     }
 
+    /// <summary>
+    /// Gap 1.1 end-to-end: with post-actions enabled (the production default) a created project must
+    /// come back actually restored, which is what <c>dotnet new</c> does and what this server
+    /// previously only described in metadata. This is the only test that lets the post-action
+    /// executor shell out for real.
+    ///
+    /// A NuGet.config with a cleared source list is staged so the restore is offline and
+    /// deterministic: a class library has no PackageReference, so it needs no feed.
+    /// </summary>
+    [Fact]
+    public async Task E2E_PostActionsEnabled_ActuallyRestoresTheProject()
+    {
+        var workspace = Path.Combine(_tempDir, "PostActionWorkspace");
+        Directory.CreateDirectory(workspace);
+        File.Copy(Path.Combine(_tempDir, "global.json"), Path.Combine(workspace, "global.json"));
+        File.WriteAllText(
+            Path.Combine(workspace, "NuGet.config"),
+            "<configuration><packageSources><clear /></packageSources></configuration>");
+
+        var flags = new McpFeatureFlags
+        {
+            ElicitationEnabled = false,
+            WorkspaceRoot = workspace,
+            PostActionsEnabled = true,
+        };
+
+        var outputPath = Path.Combine(workspace, "PostActionApp");
+        var result = await TemplateInstantiateTool.InstantiateTemplateAsync(
+            _service, _postProcessor, _postActionExecutor, flags, null!, "classlib", "PostActionApp", outputPath);
+
+        _output.WriteLine($"  Instantiate response: {result}");
+        var parsed = JsonSerializer.Deserialize<JsonElement>(result);
+        Assert.Equal("Success", parsed.GetProperty("Status").GetString());
+
+        // The response must report what was executed, not just the template's post-action metadata.
+        Assert.True(
+            parsed.TryGetProperty("PostActionExecution", out var execution) && execution.ValueKind == JsonValueKind.Object,
+            $"Missing 'PostActionExecution' in response: {result}");
+
+        Assert.True(execution.TryGetProperty("Executed", out var executed), $"Missing 'PostActionExecution.Executed': {result}");
+        var restore = executed.EnumerateArray().Single(e =>
+            string.Equals(
+                e.GetProperty("ActionId").GetString(),
+                "210d431b-a78b-4d2f-b762-4ed3e3ea9025",
+                StringComparison.OrdinalIgnoreCase));
+
+        Assert.StartsWith("dotnet restore", restore.GetProperty("Command").GetString());
+        Assert.True(
+            restore.GetProperty("Success").GetBoolean(),
+            $"Restore post-action failed: {restore}");
+
+        // The template engine never writes obj/project.assets.json — only a real restore does.
+        Assert.True(
+            File.Exists(Path.Combine(outputPath, "obj", "project.assets.json")),
+            $"Expected restore to produce obj/project.assets.json. Response: {result}");
+
+        // The template's open-file action is arbitrary host behaviour and must not be auto-run.
+        Assert.True(execution.TryGetProperty("Skipped", out var skipped), $"Missing 'PostActionExecution.Skipped': {result}");
+        Assert.Contains(
+            skipped.EnumerateArray(),
+            s => string.Equals(
+                s.GetProperty("ActionId").GetString(),
+                "84c0da21-51c8-4541-9940-6ca19af04ee6",
+                StringComparison.OrdinalIgnoreCase));
+
+        _output.WriteLine("  Restore executed; open-file skipped.");
+    }
+
+    /// <summary>
+    /// The configuration the other tests use keeps post-actions off, so nothing there shells out.
+    /// This pins that contract so the hermetic tests cannot silently start restoring.
+    /// </summary>
+    [Fact]
+    public async Task E2E_PostActionsDisabled_DoesNotRestore()
+    {
+        var outputPath = Path.Combine(_tempDir, "NoPostActionApp");
+
+        var result = await TemplateInstantiateTool.InstantiateTemplateAsync(
+            _service, _postProcessor, _postActionExecutor, _featureFlags, null!, "classlib", "NoPostActionApp", outputPath);
+
+        Assert.Equal("Success", JsonSerializer.Deserialize<JsonElement>(result).GetProperty("Status").GetString());
+        Assert.False(
+            File.Exists(Path.Combine(outputPath, "obj", "project.assets.json")),
+            "Post-actions are disabled, so no restore should have run.");
+    }
+
     private static async Task<(bool Success, string Output)> RunDotnetBuildAsync(string projectPath)
+        => await RunDotnetAsync(projectPath, "build --nologo");
+
+    private static async Task<(bool Success, string Output)> RunDotnetAsync(string workingDirectory, string arguments)
     {
         var psi = new ProcessStartInfo
         {
             FileName = "dotnet",
-            Arguments = "build --nologo",
-            WorkingDirectory = projectPath,
+            Arguments = arguments,
+            WorkingDirectory = workingDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
