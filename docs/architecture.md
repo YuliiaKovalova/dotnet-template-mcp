@@ -67,12 +67,21 @@ After template instantiation, the server automatically adapts the output to the 
 - Adds missing `<PackageVersion>` entries to `Directory.Packages.props`
 - Existing entries in the props file are preserved (not duplicated)
 
-**Latest NuGet Versions:**
-- Queries the NuGet V3 flat-container API for every package reference
-- Replaces template-hardcoded versions with the latest stable release
-- In CPM mode, latest versions go into `Directory.Packages.props`
-- In standalone mode, versions are updated directly in `.csproj`
-- Controlled via `resolveLatestVersions` parameter (default: `true`)
+**NuGet Version Resolution:**
+- Resolves feeds from the `NuGet.config` chain that applies to the target directory (`Settings.LoadDefaultSettings`), so private feeds, disabled sources, `packageSourceMapping`, credential providers and proxies are all honored
+- Queries each applicable source via `FindPackageByIdResource`, taking the highest stable version
+- In CPM mode, versions go into `Directory.Packages.props`; in standalone mode, into the `.csproj`
+- Controlled by `resolveLatestVersions`. The default is **report-only**: upgrades are surfaced to the caller and nothing is written. Applying by default produced untested version combinations and overrode the template author's pinning
+
+**Post-Action Execution:**
+- `PostActionExecutor` runs the two built-in, non-arbitrary post-actions: restore (`210D431B-…`) and add-to-solution (`D396686C-…`)
+- Honors `args.files` for restore and `args.primaryOutputIndexes` for add-to-solution
+- Every other action — notably "run script" and "start process" — is reported as skipped with its manual instructions. Those are arbitrary code from a NuGet package, and auto-resolve means a template can be installed without the user ever naming it
+- Failures never throw: they are captured in the report so already-created files are still returned. `continueOnError` actions are non-blocking
+
+**Path Confinement:**
+- `WorkspaceGuard` validates every caller-supplied write path against `MCP_TEMPLATE_WORKSPACE_ROOT`
+- Resolves symlinks (`ResolveLinkTarget(returnFinalTarget: true)`) so a link inside the workspace cannot redirect writes outside it, and uses a trailing-separator root so `C:\work-other` does not match root `C:\work`
 
 **Standalone Package Upgrades:**
 - `packages_upgrade` scans an existing `.csproj`, `.sln`/`.slnx`, or directory (independent of template creation) for outdated NuGet versions
@@ -83,7 +92,12 @@ After template instantiation, the server automatically adapts the output to the 
 
 **NuGet Version Cache:**
 - `NuGetVersionResolver` caches lookups in two tiers: in-memory for the process, and a best-effort, bounded on-disk cache under `LocalApplicationData` that survives restarts
-- Separate TTLs for successes (30 min) and failures (1 min); HTTP timeouts are treated as transient failures
+- Cache keys are prefixed with a hash of the resolved feed scope, so the same package id resolving differently under different `NuGet.config` files never leaks across repositories
+- Separate TTLs for successes (30 min) and failures (1 min); timeouts are treated as transient failures
+
+**Template List Cache:**
+- `GetTemplatesAsync` memoizes the template inventory for the process lifetime behind a double-checked lock, since nearly every tool calls it and the first call sits behind the SDK nupkg scan + install
+- Explicitly invalidated by `InvalidateTemplateCache()` on every install and uninstall
 
 **Multi-Template Composition:**
 - `template_compose` executes a sequence of template operations in order
@@ -112,6 +126,13 @@ dotnet-counters monitor --process-id <PID> Microsoft.TemplateEngine.MCP
 | Environment Variable | Default | Controls |
 |---------------------|---------|----------|
 | `MCP_TEMPLATE_INTENT_RESOLUTION` | `true` | Intent resolution tools |
+| `MCP_TEMPLATE_POST_ACTIONS` | `true` | Safe post-action execution (restore, add-to-solution) |
+| `MCP_TEMPLATE_RESOLVE_LATEST_VERSIONS` | `false` | Apply version upgrades at creation instead of reporting them |
+| `MCP_TEMPLATE_WORKSPACE_ROOT` | working directory | Root that all file writes must stay inside |
+| `MCP_TEMPLATE_WORKSPACE_ENFORCEMENT` | `true` | Path confinement |
+| `MCP_TEMPLATE_HTTP_TOKEN` | _(unset)_ | Bearer token for the HTTP transport |
+| `MCP_TEMPLATE_HTTP_ALLOW_ANONYMOUS` | `false` | Explicit opt-in to unauthenticated HTTP |
+| `MCP_TEMPLATE_HTTP_RATE_LIMIT` | `120` | Per-client requests/minute on `/mcp` |
 
 Set to `false`, `0`, `no`, or `off` to disable.
 
