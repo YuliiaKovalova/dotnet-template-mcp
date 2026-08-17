@@ -188,7 +188,9 @@ Example:
 
 ## `template_validate`
 
-Validate a local template directory for authoring issues before publishing. Catches mistakes that would otherwise only surface after `dotnet new install` or during project creation. **No existing tooling provides this level of template.json validation.**
+Validate a local template directory for authoring issues before publishing. Catches mistakes that would otherwise only surface after `dotnet new install` or during project creation.
+
+> Microsoft already ships template authoring validation: `Microsoft.TemplateEngine.Authoring.CLI` (`dotnet template-authoring validate`), `Authoring.Tasks` for build-time validation, and `TemplateVerifier` for snapshot testing. This tool does not replace them and is not more thorough than the reference validator. What it adds is agent-consumable delivery: one structured JSON payload with `errors`/`warnings`/`suggestions` and fix-oriented messages, in-band, with no extra install or output parsing.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

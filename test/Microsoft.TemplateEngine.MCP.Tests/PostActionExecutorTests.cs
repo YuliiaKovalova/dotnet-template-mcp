@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) 2025 Yuliia Kovalova.
+// Licensed under the MIT license. See LICENSE in the repository root for details.
 
 using FakeItEasy;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -299,5 +299,88 @@ public class PostActionExecutorTests : IDisposable
         var invocation = Assert.Single(_invocations);
         Assert.Contains("Real.csproj", invocation.Arguments);
         Assert.DoesNotContain("Ghost.csproj", invocation.Arguments);
+    }
+
+    [Fact]
+    public async Task Execute_AddToSolution_DoesNotEscapeTheWorkspaceBoundary()
+    {
+        // A solution belonging to an unrelated repository sits above the workspace root. Adding to
+        // it would be a write outside the confinement the workspace root is supposed to provide.
+        File.WriteAllText(Path.Combine(_tempDir, "Outside.sln"), string.Empty);
+
+        var workspace = Path.Combine(_tempDir, "workspace");
+        Directory.CreateDirectory(workspace);
+
+        var projectDir = Path.Combine(workspace, "App");
+        Directory.CreateDirectory(projectDir);
+        File.WriteAllText(Path.Combine(projectDir, "App.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+
+        var creation = FakeCreationResult(
+            new[] { FakePostAction(PostActionExecutor.AddProjectToSolutionActionId) },
+            new[] { "App/App.csproj" });
+
+        var report = await CreateExecutor().ExecuteAsync(creation, workspace, workspace);
+
+        Assert.Empty(_invocations);
+        var executed = Assert.Single(report.Executed);
+        Assert.False(executed.Success);
+        Assert.Contains("workspace root", executed.Error);
+        Assert.False(report.HasBlockingFailure);
+    }
+
+    [Fact]
+    public async Task Execute_AddToSolution_UsesSolutionAtTheBoundaryItself()
+    {
+        var workspace = Path.Combine(_tempDir, "workspace");
+        Directory.CreateDirectory(workspace);
+        File.WriteAllText(Path.Combine(workspace, "Root.sln"), string.Empty);
+
+        var projectDir = Path.Combine(workspace, "App");
+        Directory.CreateDirectory(projectDir);
+        File.WriteAllText(Path.Combine(projectDir, "App.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+
+        var creation = FakeCreationResult(
+            new[] { FakePostAction(PostActionExecutor.AddProjectToSolutionActionId) },
+            new[] { "App.csproj" });
+
+        var report = await CreateExecutor().ExecuteAsync(creation, projectDir, workspace);
+
+        Assert.True(Assert.Single(report.Executed).Success, Assert.Single(report.Executed).Error);
+        Assert.Contains("Root.sln", Assert.Single(_invocations).Arguments);
+    }
+
+    [Fact]
+    public void FindSolution_WithoutBoundary_WalksAboveTheStartDirectory()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "Above.sln"), string.Empty);
+        var nested = Path.Combine(_tempDir, "a", "b");
+        Directory.CreateDirectory(nested);
+
+        Assert.Equal(
+            Path.Combine(_tempDir, "Above.sln"),
+            PostActionExecutor.FindSolution(nested));
+    }
+
+    [Fact]
+    public void FindSolution_StartDirectoryOutsideBoundary_ReturnsNull()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "Above.sln"), string.Empty);
+        var boundary = Path.Combine(_tempDir, "workspace");
+        Directory.CreateDirectory(boundary);
+
+        Assert.Null(PostActionExecutor.FindSolution(_tempDir, boundary));
+    }
+
+    [Fact]
+    public void FindSolution_SiblingOfBoundary_IsNotTreatedAsInside()
+    {
+        // "workspace-other" must not match boundary "workspace" on a prefix comparison.
+        var boundary = Path.Combine(_tempDir, "workspace");
+        var sibling = Path.Combine(_tempDir, "workspace-other");
+        Directory.CreateDirectory(boundary);
+        Directory.CreateDirectory(sibling);
+        File.WriteAllText(Path.Combine(sibling, "Sibling.sln"), string.Empty);
+
+        Assert.Null(PostActionExecutor.FindSolution(sibling, boundary));
     }
 }

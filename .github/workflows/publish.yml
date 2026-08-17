@@ -3,6 +3,12 @@ name: Publish to NuGet
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version already on nuget.org to (re)publish to the MCP Registry, e.g. 1.4.0. Blank uses the version in server.json. Does not push to NuGet.'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -11,6 +17,9 @@ jobs:
   publish:
     name: Publish NuGet Package
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    outputs:
+      version: ${{ steps.version.outputs.value }}
 
     steps:
       - uses: actions/checkout@v7
@@ -60,3 +69,79 @@ jobs:
             ```
 
             See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+  publish-registry:
+    # Without this, the entry in the official MCP Registry silently stays at whatever version was
+    # published by hand — discovery through the registry then installs a stale build.
+    # Runnable on its own (workflow_dispatch) so the registry can be brought up to date without
+    # cutting a new release.
+    name: Publish to MCP Registry
+    runs-on: ubuntu-latest
+    needs: publish
+    if: always() && needs.publish.result != 'failure' && needs.publish.result != 'cancelled'
+
+    permissions:
+      contents: read
+      id-token: write # Required for mcp-publisher's GitHub OIDC login.
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve version
+        id: resolve
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          PUBLISHED_VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            version="$INPUT_VERSION"
+          elif [ -n "$PUBLISHED_VERSION" ]; then
+            version="$PUBLISHED_VERSION"
+          else
+            version="$(jq -r '.version' server.json)"
+          fi
+
+          case "$version" in
+            ''|null) echo "::error::Could not resolve a version to publish."; exit 1 ;;
+          esac
+
+          echo "Publishing version ${version} to the MCP Registry."
+          echo "value=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync server.json to the resolved version
+        env:
+          VERSION: ${{ steps.resolve.outputs.value }}
+        run: |
+          jq --arg v "$VERSION" '.version = $v | .packages[].version = $v' server.json > server.tmp
+          mv server.tmp server.json
+          cat server.json
+
+      - name: Wait for the package to be indexed on nuget.org
+        env:
+          VERSION: ${{ steps.resolve.outputs.value }}
+        run: |
+          # The registry validates ownership by fetching the published package's README and looking
+          # for the `mcp-name:` marker. nuget.org indexing lags the push by minutes, so publishing
+          # immediately would fail validation on a package that demonstrably exists.
+          url="https://api.nuget.org/v3-flatcontainer/dotnettemplatemcp/index.json"
+          for attempt in $(seq 1 40); do
+            if curl -fsSL "$url" | jq -e --arg v "$VERSION" '.versions | index($v)' >/dev/null 2>&1; then
+              echo "Version ${VERSION} indexed after ${attempt} attempt(s)."
+              exit 0
+            fi
+            echo "Attempt ${attempt}: ${VERSION} not indexed yet; retrying in 30s."
+            sleep 30
+          done
+          echo "::error::DotnetTemplateMCP ${VERSION} was not indexed on nuget.org within 20 minutes."
+          exit 1
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          test -x ./mcp-publisher || { echo "::error::mcp-publisher was not extracted as expected."; ls -la; exit 1; }
+
+      - name: Authenticate to the MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish

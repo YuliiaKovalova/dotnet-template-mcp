@@ -45,7 +45,15 @@ Agent calls: template_validate("./my-template")
 
 **What it catches:** missing required fields, invalid identity format, short name conflicts with CLI commands, parameter issues (missing defaults, empty choices, prefix collisions, type mismatches), broken computed symbols, constraint misconfiguration, and missing tags.
 
-No existing tooling does this — most template authors discover issues only after `dotnet new install` fails or produces wrong output.
+**How this relates to the official tooling.** Microsoft ships template authoring validation already, and you should know about it:
+
+| Official tool | What it gives you |
+|---|---|
+| [`Microsoft.TemplateEngine.Authoring.CLI`](https://www.nuget.org/packages/Microsoft.TemplateEngine.Authoring.CLI) | `dotnet template-authoring validate` — the reference validator |
+| [`Microsoft.TemplateEngine.Authoring.Tasks`](https://www.nuget.org/packages/Microsoft.TemplateEngine.Authoring.Tasks) | Validation at build time, as an MSBuild task |
+| [`Microsoft.TemplateEngine.Authoring.TemplateVerifier`](https://www.nuget.org/packages/Microsoft.TemplateEngine.Authoring.TemplateVerifier) | Snapshot testing of template output |
+
+What `template_validate` adds is **not** the validation itself — it is the delivery: a single structured JSON payload, split into `errors`/`warnings`/`suggestions` with fix-oriented messages, returned in-band to an agent that is already editing the template. No install step, no output parsing, no second tool in the loop. If you are a human authoring templates in CI, prefer the official tools above; they are the reference implementation and cover cases this does not.
 
 ## Tools
 
