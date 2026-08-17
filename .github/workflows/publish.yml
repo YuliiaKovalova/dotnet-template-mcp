@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version already on nuget.org to (re)publish to the MCP Registry, e.g. 1.4.0. Blank uses the version in server.json. Does not push to NuGet.'
+        description: 'Version already on nuget.org to (re)publish to the MCP Registry, e.g. 2.0.0. Blank uses the version in server.json. Does not push to NuGet.'
         required: false
         type: string
 

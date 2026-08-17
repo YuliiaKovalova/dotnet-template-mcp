@@ -1,6 +1,7 @@
 // Copyright (c) 2025 Yuliia Kovalova.
 // Licensed under the MIT license. See LICENSE in the repository root for details.
 
+using System.Reflection;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -191,7 +192,29 @@ internal sealed class Program
         options.ServerInfo = new()
         {
             Name = "DotnetTemplateMcp",
-            Version = "1.4.0"
+            Version = ServerVersion
         };
+    }
+
+    /// <summary>
+    /// The version reported to MCP clients, read from the assembly rather than hardcoded.
+    /// This string was previously a literal and silently went stale across releases, so clients
+    /// were told a version the server was not.
+    /// </summary>
+    internal static string ServerVersion { get; } = ResolveServerVersion();
+
+    private static string ResolveServerVersion()
+    {
+        var informational = typeof(Program).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+
+        if (!string.IsNullOrWhiteSpace(informational))
+        {
+            // The SDK appends source-control metadata ("2.0.0+abc123"); clients want the version.
+            var plus = informational.IndexOf('+');
+            return plus > 0 ? informational.Substring(0, plus) : informational;
+        }
+
+        return typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     }
 }

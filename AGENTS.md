@@ -80,7 +80,7 @@ internal sealed class MyTool
 
 1. **Always create PRs on a feature branch**, not directly to `main`.
 2. **After pushing, monitor the CI run** — check GitHub Actions status. If build or tests fail, fix and push again before considering the PR ready.
-3. **Version bumps** require updating three files: `DotnetTemplateMcp.csproj` (`<Version>`), `server.json` (both `version` fields), and `README.md` (install commands).
+3. **Version bumps** require updating: `DotnetTemplateMcp.csproj` (`<Version>`), `server.json` (both `version` fields), `README.md` (install commands), and `docs/configuration.md` (install commands). Verify with `git grep "<old-version>"` before tagging — the version reported to MCP clients is read from the assembly, so it needs no manual edit.
 
 ## Testing
 
