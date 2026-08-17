@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-17
+
+Major version because several defaults changed in ways that alter existing behavior. The
+NuGet package id (`DotnetTemplateMCP`) and the tool command (`template-engine-mcp`) are
+**unchanged**, so installing and launching the server works exactly as before.
+
+### Breaking
+
+- **The HTTP transport refuses to start without a bearer token.** Set `MCP_TEMPLATE_HTTP_TOKEN`,
+  or pass `MCP_TEMPLATE_HTTP_ALLOW_ANONYMOUS=true` to explicitly accept an unauthenticated
+  endpoint. Previously `MapMcp()` was exposed with no auth at all, which — combined with
+  unvalidated output paths and NuGet template install — was a remote arbitrary-write surface.
+  **stdio is unaffected**, which is how most users run this.
+- **`template_instantiate` now executes the template's restore and add-to-solution post-actions.**
+  Creating a project now shells out to `dotnet restore`, which takes longer and touches the
+  network. This is what `dotnet new` already did. Opt out per call with `runPostActions=false`
+  or globally with `MCP_TEMPLATE_POST_ACTIONS=false`.
+- **`resolveLatestVersions` defaults to report-only** (was: apply). Upgrades that would previously
+  have been written to disk are now returned as `AvailableVersionUpgrades` instead of
+  `VersionUpgrades`. **Consumers parsing that response field must update.** Restore the old
+  behavior with `resolveLatestVersions=true` or `MCP_TEMPLATE_RESOLVE_LATEST_VERSIONS=true`.
+- **Write paths are confined to a workspace root.** Absolute `outputPath` values outside the
+  process working directory are now rejected with `errorCode: path_outside_workspace`. Widen with
+  `MCP_TEMPLATE_WORKSPACE_ROOT`, or disable with `MCP_TEMPLATE_WORKSPACE_ENFORCEMENT=false`.
+- **The assembly and root namespace are now `DotnetTemplateMcp`** (was `Microsoft.TemplateEngine.MCP`).
+  Source-level only — it affects code referencing the namespace or building the project by path,
+  not anyone installing or invoking the tool.
+
 ### Added
 - **Post-action execution** — `template_instantiate` now runs the template's built-in restore (`dotnet restore`) and add-to-solution (`dotnet sln add`) post-actions, so created projects are restored and added to the solution instead of merely being described. Previously these were serialized as metadata and never executed, which made the tool strictly less capable than the `dotnet new` it told agents to prefer it over. Template-supplied script and process-start actions are **never** auto-executed — they are reported as skipped with their manual instructions. Controlled by `runPostActions` and `MCP_TEMPLATE_POST_ACTIONS`.
 - **`NuGet.config` support** — version resolution and `packages_upgrade` now resolve feeds through the `NuGet.config` chain that applies to the target directory, honoring private feeds, disabled sources, `packageSourceMapping`, credential providers and proxies. Previously `https://api.nuget.org/v3-flatcontainer/` was hardcoded, which silently wrote public nuget.org versions into repositories whose policy is an internal feed.
@@ -23,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **`dotnet sln add` could target a solution outside the workspace root.** The add-to-solution post-action walked from the output directory to the filesystem root, so creating a project inside the workspace could modify a solution belonging to an unrelated repository above it. The walk is now bounded by the workspace root when enforcement is enabled.
+- **The version reported to MCP clients was hardcoded** and had gone stale, so clients were told a version the server was not. It is now read from the assembly and cannot drift.
 
 ### Infrastructure
 - **The release workflow now publishes to the MCP Registry.** The registry entry was stuck at v1.0.1 while the repo shipped 1.4.0, so anyone discovering the server through the official registry installed a five-release-old build. Releases now sync `server.json`, wait for nuget.org to index the package (registry ownership validation reads the published package README), and publish via `mcp-publisher` with GitHub OIDC. Also runnable standalone via `workflow_dispatch`.
