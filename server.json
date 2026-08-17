@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.YuliiaKovalova/dotnet-template-mcp",
-  "description": ".NET Template Engine MCP server for dotnet new: create projects (console app, class library, web API, Blazor, MAUI), discover and search templates, inspect template parameters and frameworks (net8.0, net9.0, net10.0), scaffold solutions, author and validate custom templates, install template packages from NuGet.",
+  "description": "MCP server for dotnet new: discover, inspect, preview and create .NET projects from templates.",
   "version": "2.0.0",
   "repository": {
     "url": "https://github.com/YuliiaKovalova/dotnet-template-mcp",

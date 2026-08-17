@@ -116,6 +116,27 @@ jobs:
           mv server.tmp server.json
           cat server.json
 
+      - name: Validate server.json against the registry's constraints
+        run: |
+          # The registry enforces limits that are not in the JSON schema, and it only reports them
+          # after the indexing wait below -- a 20-minute round trip to learn the description is too
+          # long. Check the cheap constraints up front instead. (2.0.0 shipped to NuGet but failed
+          # registry validation this way: description was 313 chars against a 100-char limit.)
+          description="$(jq -r '.description' server.json)"
+          length="${#description}"
+          if [ "$length" -gt 100 ]; then
+            echo "::error::server.json description is ${length} characters; the MCP Registry allows at most 100."
+            exit 1
+          fi
+          echo "server.json description is ${length}/100 characters."
+
+          name="$(jq -r '.name' server.json)"
+          if ! grep -qF "mcp-name: ${name}" README.md; then
+            echo "::error::README.md is missing the 'mcp-name: ${name}' marker that registry ownership validation reads."
+            exit 1
+          fi
+          echo "README.md carries the mcp-name marker for ${name}."
+
       - name: Wait for the package to be indexed on nuget.org
         env:
           VERSION: ${{ steps.resolve.outputs.value }}
