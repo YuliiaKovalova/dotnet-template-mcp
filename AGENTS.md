@@ -14,13 +14,13 @@ dotnet test
 - Targets **net8.0** and **net10.0** (see `global.json` for SDK version).
 - Uses **Central Package Management** — all versions in `Directory.Packages.props`.
 - CI runs on **ubuntu-latest** and **windows-latest** (see `.github/workflows/ci.yml`).
-- When the MCP server is running locally (e.g., as a tool provider), `dotnet build` may fail with a file lock on `bin/Debug/net10.0/Microsoft.TemplateEngine.MCP.exe`. Use `-o <tempdir>` to build to an alternate output path.
+- When the MCP server is running locally (e.g., as a tool provider), `dotnet build` may fail with a file lock on `bin/Debug/net10.0/DotnetTemplateMcp.exe`. Use `-o <tempdir>` to build to an alternate output path.
 
 ## Architecture
 
 ### Tool Registration Pattern
 
-Each MCP tool is a `static async` method in a sealed class under `src/Microsoft.TemplateEngine.MCP/Tools/`:
+Each MCP tool is a `static async` method in a sealed class under `src/DotnetTemplateMcp/Tools/`:
 
 ```csharp
 [McpServerToolType]
@@ -60,7 +60,7 @@ internal sealed class MyTool
 
 1. **DI parameters come first** — `TemplateEngineService`, `McpFeatureFlags`, `McpServer` (if elicitation is needed) are injected by the MCP framework. User-facing parameters follow, each with a `[Description]` attribute.
 
-2. **When you add or change a DI parameter on a tool method, you MUST update all test call sites.** Tests in `test/Microsoft.TemplateEngine.MCP.Tests/` call tool methods directly (not through DI), so they must pass all parameters explicitly. Example: `new McpFeatureFlags()` for the default (Full profile).
+2. **When you add or change a DI parameter on a tool method, you MUST update all test call sites.** Tests in `test/DotnetTemplateMcp.Tests/` call tool methods directly (not through DI), so they must pass all parameters explicitly. Example: `new McpFeatureFlags()` for the default (Full profile).
 
 3. **Tool profiles** — Tools are either "lite" (5 core tools always available) or "full" (all tools). Non-lite tools must include a `featureFlags.IsToolEnabled()` check at the start. The lite tools are: `template_from_intent`, `template_instantiate`, `template_inspect`, `template_search`, `template_dry_run`.
 
@@ -80,7 +80,7 @@ internal sealed class MyTool
 
 1. **Always create PRs on a feature branch**, not directly to `main`.
 2. **After pushing, monitor the CI run** — check GitHub Actions status. If build or tests fail, fix and push again before considering the PR ready.
-3. **Version bumps** require updating three files: `Microsoft.TemplateEngine.MCP.csproj` (`<Version>`), `server.json` (both `version` fields), and `README.md` (install commands).
+3. **Version bumps** require updating three files: `DotnetTemplateMcp.csproj` (`<Version>`), `server.json` (both `version` fields), and `README.md` (install commands).
 
 ## Testing
 
